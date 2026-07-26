@@ -43,9 +43,9 @@ export function BottomPanel() {
   }
 
   return (
-    <section className="pointer-events-auto absolute bottom-0 left-[340px] right-0 z-30 border-t border-[var(--border)] bg-[var(--surface)] shadow-[0_-1px_0_var(--shadow)]">
-      <div className="mx-auto max-w-5xl px-6 py-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
+    <section className="pointer-events-auto absolute bottom-0 left-[340px] right-0 z-30 flex max-h-[min(55vh,32rem)] flex-col border-t border-[var(--border)] bg-[var(--surface)] shadow-[0_-1px_0_var(--shadow)]">
+      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-6 py-6">
+        <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]">
             {panelMode === 'cable' ? 'Cable' : panelMode === 'group' ? 'Incidents' : 'Incident'}
           </p>
@@ -59,40 +59,45 @@ export function BottomPanel() {
           </button>
         </div>
 
-        {panelMode === 'cable' && cableDetail && (
-          <CableView cable={cableDetail} onSelectIncident={handleSelectIncident} />
-        )}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+          onWheel={(event) => event.stopPropagation()}
+        >
+          {panelMode === 'cable' && cableDetail && (
+            <CableView cable={cableDetail} onSelectIncident={handleSelectIncident} />
+          )}
 
-        {panelMode === 'incident' && incidentDetail && <IncidentView incident={incidentDetail} />}
+          {panelMode === 'incident' && incidentDetail && <IncidentView incident={incidentDetail} />}
 
-        {panelMode === 'group' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">Multiple incidents at this location</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Select an incident to view details.
-              </p>
+          {panelMode === 'group' && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Multiple incidents at this location</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Select an incident to view details.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {groupIncidents.map((incident) => (
+                  <button
+                    key={incident.id}
+                    type="button"
+                    onClick={() => void handleSelectGroupedIncident(incident.id)}
+                    className="flex w-full items-center justify-between border border-[var(--border)] bg-[var(--bg)] px-3 py-3 text-left hover:border-[var(--text)]"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{incident.original_cable_name}</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {incident.date} · {incident.region}
+                      </p>
+                    </div>
+                    <span className="text-xs text-[var(--muted)]">{incident.status || '—'}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              {groupIncidents.map((incident) => (
-                <button
-                  key={incident.id}
-                  type="button"
-                  onClick={() => void handleSelectGroupedIncident(incident.id)}
-                  className="flex w-full items-center justify-between border border-[var(--border)] bg-[var(--bg)] px-3 py-3 text-left hover:border-[var(--text)]"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{incident.original_cable_name}</p>
-                    <p className="mt-1 text-xs text-[var(--muted)]">
-                      {incident.date} · {incident.region}
-                    </p>
-                  </div>
-                  <span className="text-xs text-[var(--muted)]">{incident.status || '—'}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </section>
   )
