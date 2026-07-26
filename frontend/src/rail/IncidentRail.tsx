@@ -40,6 +40,10 @@ export function IncidentRail() {
   const setFilteredResults = useUiStore((state) => state.setFilteredResults)
   const setQueryLoading = useUiStore((state) => state.setQueryLoading)
   const selectIncidentFromList = useUiStore((state) => state.selectIncidentFromList)
+  const hideQuietCables = useUiStore((state) => state.hideQuietCables)
+  const toggleHideQuietCables = useUiStore((state) => state.toggleHideQuietCables)
+  const filteredMarkers = useUiStore((state) => state.filteredMarkers)
+  const requestFitBounds = useUiStore((state) => state.requestFitBounds)
 
   const [meta, setMeta] = useState<FilterMeta | null>(null)
   const [searchDraft, setSearchDraft] = useState(query.q)
@@ -103,6 +107,15 @@ export function IncidentRail() {
           </span>
         </div>
 
+        <button
+          type="button"
+          onClick={() => requestFitBounds()}
+          disabled={filteredMarkers.length === 0}
+          className="mt-2 w-full border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text)] hover:border-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Fit to results
+        </button>
+
         <input
           type="search"
           value={searchDraft}
@@ -112,6 +125,21 @@ export function IncidentRail() {
         />
 
         <div className="mt-3 space-y-3">
+          <label className="flex cursor-pointer items-start gap-2 text-xs text-[var(--text)]">
+            <input
+              type="checkbox"
+              checked={hideQuietCables}
+              onChange={() => toggleHideQuietCables()}
+              className="mt-0.5"
+            />
+            <span>
+              Hide cables with no incidents
+              <span className="mt-0.5 block text-[var(--muted)]">
+                Follows current filters
+              </span>
+            </span>
+          </label>
+
           <FilterSection label="Region">
             <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
               {(meta?.regions ?? []).map((item) => {

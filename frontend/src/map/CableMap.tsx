@@ -73,6 +73,40 @@ function markersToGeoJson(
   }
 }
 
+function applyCableVisibilityFilter(
+  map: maplibregl.Map,
+  hideQuietCables: boolean,
+  cableNames: string[],
+) {
+  if (!map.getLayer('cables-line')) {
+    return
+  }
+
+  if (!hideQuietCables) {
+    map.setFilter('cables-line', null)
+    map.setFilter('cables-line-hover', null)
+    return
+  }
+
+  if (cableNames.length === 0) {
+    map.setFilter('cables-line', ['==', ['get', 'name'], '__none__'])
+    map.setFilter('cables-line-hover', ['==', ['get', 'name'], '__none__'])
+    return
+  }
+
+  const nameFilter: maplibregl.FilterSpecification = [
+    'in',
+    ['get', 'name'],
+    ['literal', cableNames],
+  ]
+  map.setFilter('cables-line', nameFilter)
+  map.setFilter('cables-line-hover', nameFilter)
+}
+
+function uniqueCableNames(incidents: IncidentListItem[]): string[] {
+  return [...new Set(incidents.map((incident) => incident.canonical_cable_name).filter(Boolean))]
+}
+
 function addMapLayers(
   map: maplibregl.Map,
   cableGeoJson: FeatureCollection,
@@ -201,7 +235,11 @@ export function CableMap() {
   const setHoverInfo = useUiStore((state) => state.setHoverInfo)
   const hoverInfo = useUiStore((state) => state.hoverInfo)
   const filteredMarkers = useUiStore((state) => state.filteredMarkers)
+  const filteredIncidents = useUiStore((state) => state.filteredIncidents)
   const selectedIncidentId = useUiStore((state) => state.selectedIncidentId)
+  const hideQuietCables = useUiStore((state) => state.hideQuietCables)
+  const fitBoundsRequestId = useUiStore((state) => state.fitBoundsRequestId)
+  const clearFitBoundsRequest = useUiStore((state) => state.clearFitBoundsRequest)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -284,6 +322,12 @@ export function CableMap() {
         activeMap.getCanvas().style.cursor = ''
         if (activeMap.getLayer('cables-line-hover')) {
           activeMap.setPaintProperty('cables-line-hover', 'line-opacity', 0)
+          const state = useUiStore.getState()
+          applyCableVisibilityFilter(
+            activeMap,
+            state.hideQuietCables,
+            uniqueCableNames(state.filteredIncidents),
+          )
         }
         setHoverInfo(null)
       })
@@ -326,6 +370,12 @@ export function CableMap() {
         const selectedId = useUiStore.getState().selectedIncidentId
         addMapLayers(activeMap, cableGeoJson, markers, selectedId)
         bindInteractions(activeMap)
+        const state = useUiStore.getState()
+        applyCableVisibilityFilter(
+          activeMap,
+          state.hideQuietCables,
+          uniqueCableNames(state.filteredIncidents),
+        )
         activeMap.resize()
         setStatus('ready')
       } catch (error) {
@@ -410,6 +460,33 @@ export function CableMap() {
 
   useEffect(() => {
     const map = mapRef.current
+    if (!map || !hasLoadedRef.current || !map.getLayer('cables-line')) {
+      return
+    }
+    applyCableVisibilityFilter(map, hideQuietCables, uniqueCableNames(filteredIncidents))
+  }, [hideQuietCables, filteredIncidents])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !hasLoadedRef.current || fitBoundsRequestId === 0) {
+      return
+    }
+
+    if (filteredMarkers.length === 0) {
+      clearFitBoundsRequest()
+      return
+    }
+
+    const bounds = new maplibregl.LngLatBounds()
+    for (const marker of filteredMarkers) {
+      bounds.extend([marker.longitude, marker.latitude])
+    }
+    map.fitBounds(bounds, { padding: 48, maxZoom: 6, duration: 700 })
+    clearFitBoundsRequest()
+  }, [fitBoundsRequestId, filteredMarkers, clearFitBoundsRequest])
+
+  useEffect(() => {
+    const map = mapRef.current
     if (!map || !hasLoadedRef.current) {
       return
     }
@@ -421,11 +498,12 @@ export function CableMap() {
       if (!cableGeoJson) {
         return
       }
-      addMapLayers(
+      const state = useUiStore.getState()
+      addMapLayers(map, cableGeoJson, state.filteredMarkers, state.selectedIncidentId)
+      applyCableVisibilityFilter(
         map,
-        cableGeoJson,
-        useUiStore.getState().filteredMarkers,
-        useUiStore.getState().selectedIncidentId,
+        state.hideQuietCables,
+        uniqueCableNames(state.filteredIncidents),
       )
       map.resize()
     })

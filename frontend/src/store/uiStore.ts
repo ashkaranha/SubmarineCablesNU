@@ -27,6 +27,8 @@ interface UiState {
   incidentDetail: IncidentSummary | null
   hoverInfo: HoverInfo | null
   flyTarget: FlyTarget | null
+  hideQuietCables: boolean
+  fitBoundsRequestId: number
   query: IncidentQuery
   filteredIncidents: IncidentListItem[]
   filteredMarkers: MarkerGroup[]
@@ -34,6 +36,9 @@ interface UiState {
   queryLoading: boolean
   setTheme: (theme: 'light' | 'dark') => void
   toggleTheme: () => void
+  toggleHideQuietCables: () => void
+  requestFitBounds: () => void
+  clearFitBoundsRequest: () => void
   setQuery: (patch: Partial<IncidentQuery>) => void
   toggleRegion: (region: string) => void
   toggleActorTier: (tier: ActorTier) => void
@@ -51,6 +56,7 @@ interface UiState {
 }
 
 const THEME_KEY = 'cableincidents-theme'
+const HIDE_QUIET_KEY = 'cableincidents-hide-quiet-cables'
 
 const emptyQuery: IncidentQuery = {
   q: '',
@@ -62,6 +68,14 @@ const emptyQuery: IncidentQuery = {
 function readTheme(): 'light' | 'dark' {
   const stored = localStorage.getItem(THEME_KEY)
   return stored === 'dark' ? 'dark' : 'light'
+}
+
+function readHideQuietCables(): boolean {
+  const stored = localStorage.getItem(HIDE_QUIET_KEY)
+  if (stored === null) {
+    return true
+  }
+  return stored === 'true'
 }
 
 function toggleInList<T>(list: T[], value: T): T[] {
@@ -79,6 +93,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   incidentDetail: null,
   hoverInfo: null,
   flyTarget: null,
+  hideQuietCables: readHideQuietCables(),
+  fitBoundsRequestId: 0,
   query: emptyQuery,
   filteredIncidents: [],
   filteredMarkers: [],
@@ -93,6 +109,13 @@ export const useUiStore = create<UiState>((set, get) => ({
     const next = get().theme === 'light' ? 'dark' : 'light'
     get().setTheme(next)
   },
+  toggleHideQuietCables: () => {
+    const next = !get().hideQuietCables
+    localStorage.setItem(HIDE_QUIET_KEY, String(next))
+    set({ hideQuietCables: next })
+  },
+  requestFitBounds: () => set({ fitBoundsRequestId: get().fitBoundsRequestId + 1 }),
+  clearFitBoundsRequest: () => set({ fitBoundsRequestId: 0 }),
   setQuery: (patch) => set({ query: { ...get().query, ...patch } }),
   toggleRegion: (region) =>
     set({
