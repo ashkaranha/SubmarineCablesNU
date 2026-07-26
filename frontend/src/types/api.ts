@@ -1,6 +1,7 @@
 export type ActorTier = 'confirmed' | 'suspected' | 'none'
 export type MarkerColor = 'red' | 'yellow' | 'green' | 'gray'
 export type BadgeColor = 'red' | 'yellow' | 'green'
+export type StatusFilter = 'resolved' | 'unresolved'
 
 export interface IncidentSummary {
   id: string
@@ -21,6 +22,7 @@ export interface IncidentSummary {
   actor_tier: ActorTier
   marker_color: MarkerColor
   badge_color: BadgeColor
+  region: string
   latitude?: number | null
   longitude?: number | null
   marker_group_id?: string | null
@@ -33,8 +35,12 @@ export interface IncidentListItem {
   original_cable_name: string
   date: string
   status?: string | null
+  cause?: string | null
+  nation_state_suspected?: string | null
   actor_tier: ActorTier
   marker_color: MarkerColor
+  badge_color: BadgeColor
+  region: string
   latitude?: number | null
   longitude?: number | null
   marker_group_id?: string | null
@@ -61,6 +67,25 @@ export interface CableSummary {
 
 export interface CableDetail extends CableSummary {
   incidents: IncidentSummary[]
+}
+
+export interface FilterCount {
+  value: string
+  count: number
+}
+
+export interface FilterMeta {
+  regions: FilterCount[]
+  actor_tiers: FilterCount[]
+  statuses: FilterCount[]
+  total: number
+}
+
+export interface IncidentQuery {
+  q: string
+  regions: string[]
+  actorTiers: ActorTier[]
+  status: StatusFilter | null
 }
 
 export type PanelMode = 'closed' | 'cable' | 'incident' | 'group'

@@ -93,7 +93,9 @@ Update `data/telegeography/VERSION.txt` with the fetch date.
 ## Map behavior
 
 - Full-viewport MapLibre map with Telegeography cable routes
-- Incident markers cluster at low zoom; co-located incidents share one marker
+- Left **incident rail** with search, region (geo theater), nation-state, and status filters
+- Map markers sync to the filtered incident set; list selection flies to / highlights the incident
+- Incident detail is primary; cable context is secondary via a “Related cable” strip
 - Cable hover shows name + incident name/date list
 - Click cable → bottom panel (cable view)
 - Click incident marker → bottom panel (incident view)

@@ -12,6 +12,8 @@ from app.config import settings
 from app.models.schemas import (
     CableDetail,
     CableSummary,
+    FilterCount,
+    FilterMeta,
     IncidentListItem,
     IncidentSummary,
     MarkerGroup,
@@ -19,9 +21,11 @@ from app.models.schemas import (
 from app.services.actor_tier import (
     badge_color_for,
     classify_actor_tier,
+    is_resolved_status,
     marker_color_for,
     marker_severity,
 )
+from app.services.region import classify_theater
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -119,6 +123,137 @@ class DataStore:
             except (TypeError, ValueError):
                 pass
         return _format_length(None, row.get("shape_length"))
+
+    def to_list_item(self, incident: IncidentSummary) -> IncidentListItem:
+        return IncidentListItem(
+            id=incident.id,
+            canonical_cable_name=incident.canonical_cable_name,
+            original_cable_name=incident.original_cable_name,
+            date=incident.date,
+            status=incident.status,
+            cause=incident.cause,
+            nation_state_suspected=incident.nation_state_suspected,
+            actor_tier=incident.actor_tier,
+            marker_color=incident.marker_color,
+            badge_color=incident.badge_color,
+            region=incident.region,
+            latitude=incident.latitude,
+            longitude=incident.longitude,
+            marker_group_id=incident.marker_group_id,
+        )
+
+    def filter_incidents(
+        self,
+        *,
+        q: str | None = None,
+        regions: list[str] | None = None,
+        actor_tiers: list[str] | None = None,
+        status: str | None = None,
+    ) -> list[IncidentSummary]:
+        query = (q or "").strip().lower()
+        region_set = {value.strip() for value in (regions or []) if value.strip()}
+        tier_set = {value.strip() for value in (actor_tiers or []) if value.strip()}
+        status_filter = (status or "").strip().lower() or None
+
+        results: list[IncidentSummary] = []
+        for incident in self.incidents:
+            if region_set and incident.region not in region_set:
+                continue
+            if tier_set and incident.actor_tier not in tier_set:
+                continue
+            if status_filter == "resolved" and not is_resolved_status(incident.status):
+                continue
+            if status_filter == "unresolved" and is_resolved_status(incident.status):
+                continue
+            if query and not _incident_matches_query(incident, query):
+                continue
+            results.append(incident)
+        return results
+
+    def filter_markers(
+        self,
+        *,
+        q: str | None = None,
+        regions: list[str] | None = None,
+        actor_tiers: list[str] | None = None,
+        status: str | None = None,
+    ) -> list[MarkerGroup]:
+        filtered = self.filter_incidents(
+            q=q,
+            regions=regions,
+            actor_tiers=actor_tiers,
+            status=status,
+        )
+        allowed_ids = {incident.id for incident in filtered}
+        markers: list[MarkerGroup] = []
+        for group in self.marker_groups:
+            incident_ids = [incident_id for incident_id in group.incident_ids if incident_id in allowed_ids]
+            if not incident_ids:
+                continue
+            group_incidents = [self.incidents_by_id[incident_id] for incident_id in incident_ids]
+            marker_color = max(
+                (incident.marker_color for incident in group_incidents),
+                key=marker_severity,
+            )
+            markers.append(
+                MarkerGroup(
+                    id=group.id,
+                    latitude=group.latitude,
+                    longitude=group.longitude,
+                    marker_color=marker_color,
+                    incident_ids=incident_ids,
+                    incident_count=len(incident_ids),
+                )
+            )
+        return markers
+
+    def filter_meta(self) -> FilterMeta:
+        region_counts: dict[str, int] = {}
+        tier_counts: dict[str, int] = {"confirmed": 0, "suspected": 0, "none": 0}
+        resolved = 0
+        unresolved = 0
+        for incident in self.incidents:
+            region_counts[incident.region] = region_counts.get(incident.region, 0) + 1
+            tier_counts[incident.actor_tier] = tier_counts.get(incident.actor_tier, 0) + 1
+            if is_resolved_status(incident.status):
+                resolved += 1
+            else:
+                unresolved += 1
+
+        regions = [
+            FilterCount(value=name, count=count)
+            for name, count in sorted(region_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        actor_tiers = [
+            FilterCount(value=name, count=tier_counts.get(name, 0))
+            for name in ("confirmed", "suspected", "none")
+        ]
+        statuses = [
+            FilterCount(value="resolved", count=resolved),
+            FilterCount(value="unresolved", count=unresolved),
+        ]
+        return FilterMeta(
+            regions=regions,
+            actor_tiers=actor_tiers,
+            statuses=statuses,
+            total=len(self.incidents),
+        )
+
+
+def _incident_matches_query(incident: IncidentSummary, query: str) -> bool:
+    haystacks = [
+        incident.canonical_cable_name,
+        incident.original_cable_name,
+        incident.specific_location,
+        incident.cause,
+        incident.suspected_actor,
+        incident.nation_state_suspected,
+        incident.source,
+        incident.status,
+        incident.region,
+        incident.outage_impact,
+    ]
+    return any(query in (value or "").lower() for value in haystacks)
 
 
 def _load_csv_rows(path: Path) -> list[dict[str, str]]:
@@ -268,6 +403,7 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
             actor_tier=actor_tier,
             marker_color=marker_color,
             badge_color=badge_color,
+            region=classify_theater(latitude, longitude),
             latitude=latitude,
             longitude=longitude,
             coordinate_source=coordinate_source,  # type: ignore[arg-type]

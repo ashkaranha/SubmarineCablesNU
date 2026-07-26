@@ -6,7 +6,6 @@ import {
   fetchCableGeoJson,
   fetchIncident,
   fetchIncidents,
-  fetchMarkers,
 } from '../api/client'
 import { useUiStore } from '../store/uiStore'
 import type { IncidentListItem, MarkerGroup } from '../types/api'
@@ -51,7 +50,10 @@ function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
   }
 }
 
-function markersToGeoJson(markers: MarkerGroup[]): FeatureCollection {
+function markersToGeoJson(
+  markers: MarkerGroup[],
+  selectedIncidentId: string | null,
+): FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: markers.map((marker) => ({
@@ -65,6 +67,7 @@ function markersToGeoJson(markers: MarkerGroup[]): FeatureCollection {
         marker_color: marker.marker_color,
         incident_count: marker.incident_count,
         incident_ids: marker.incident_ids.join('|'),
+        selected: selectedIncidentId != null && marker.incident_ids.includes(selectedIncidentId) ? 1 : 0,
       },
     })),
   }
@@ -74,12 +77,13 @@ function addMapLayers(
   map: maplibregl.Map,
   cableGeoJson: FeatureCollection,
   markers: MarkerGroup[],
+  selectedIncidentId: string | null,
 ) {
   if (map.getSource('cables')) {
     const cables = map.getSource('cables') as maplibregl.GeoJSONSource
     cables.setData(cableGeoJson)
     const incidents = map.getSource('incidents') as maplibregl.GeoJSONSource
-    incidents.setData(markersToGeoJson(markers))
+    incidents.setData(markersToGeoJson(markers, selectedIncidentId))
     return
   }
 
@@ -89,9 +93,9 @@ function addMapLayers(
     type: 'line',
     source: 'cables',
     paint: {
-      'line-color': ['coalesce', ['get', 'color'], '#5b5b5b'],
-      'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.5, 6, 3.5],
-      'line-opacity': 0.95,
+      'line-color': ['coalesce', ['get', 'color'], '#8a8a8a'],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.2, 6, 2.8],
+      'line-opacity': 0.75,
     },
   })
   map.addLayer({
@@ -107,7 +111,7 @@ function addMapLayers(
 
   map.addSource('incidents', {
     type: 'geojson',
-    data: markersToGeoJson(markers),
+    data: markersToGeoJson(markers, selectedIncidentId),
     cluster: true,
     clusterMaxZoom: 8,
     clusterRadius: 45,
@@ -155,9 +159,9 @@ function addMapLayers(
         MARKER_COLORS.green,
         MARKER_COLORS.gray,
       ],
-      'circle-radius': 11,
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#ffffff',
+      'circle-radius': ['case', ['==', ['get', 'selected'], 1], 14, 11],
+      'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 3, 2],
+      'circle-stroke-color': ['case', ['==', ['get', 'selected'], 1], '#111111', '#ffffff'],
     },
   })
   map.addLayer({
@@ -181,7 +185,7 @@ export function CableMap() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const incidentsByCableRef = useRef<Map<string, IncidentListItem[]>>(new Map())
-  const dataRef = useRef<{ cableGeoJson: FeatureCollection; markers: MarkerGroup[] } | null>(null)
+  const cableGeoJsonRef = useRef<FeatureCollection | null>(null)
   const interactionsBoundRef = useRef(false)
   const hasLoadedRef = useRef(false)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -196,6 +200,8 @@ export function CableMap() {
   const openGroupPanel = useUiStore((state) => state.openGroupPanel)
   const setHoverInfo = useUiStore((state) => state.setHoverInfo)
   const hoverInfo = useUiStore((state) => state.hoverInfo)
+  const filteredMarkers = useUiStore((state) => state.filteredMarkers)
+  const selectedIncidentId = useUiStore((state) => state.selectedIncidentId)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -311,12 +317,14 @@ export function CableMap() {
     }
 
     const setupMapContent = (activeMap: maplibregl.Map) => {
-      const data = dataRef.current
-      if (!data) {
+      const cableGeoJson = cableGeoJsonRef.current
+      if (!cableGeoJson) {
         return
       }
       try {
-        addMapLayers(activeMap, data.cableGeoJson, data.markers)
+        const markers = useUiStore.getState().filteredMarkers
+        const selectedId = useUiStore.getState().selectedIncidentId
+        addMapLayers(activeMap, cableGeoJson, markers, selectedId)
         bindInteractions(activeMap)
         activeMap.resize()
         setStatus('ready')
@@ -329,9 +337,8 @@ export function CableMap() {
 
     const init = async () => {
       try {
-        const [cableGeoJson, markers, incidents] = await Promise.all([
+        const [cableGeoJson, incidents] = await Promise.all([
           fetchCableGeoJson(),
-          fetchMarkers(),
           fetchIncidents(),
         ])
 
@@ -339,7 +346,7 @@ export function CableMap() {
           return
         }
 
-        dataRef.current = { cableGeoJson, markers }
+        cableGeoJsonRef.current = cableGeoJson
         const byCable = new Map<string, IncidentListItem[]>()
         for (const incident of incidents) {
           const list = byCable.get(incident.canonical_cable_name) ?? []
@@ -394,6 +401,15 @@ export function CableMap() {
 
   useEffect(() => {
     const map = mapRef.current
+    const source = map?.getSource('incidents') as maplibregl.GeoJSONSource | undefined
+    if (!map || !source || !hasLoadedRef.current) {
+      return
+    }
+    source.setData(markersToGeoJson(filteredMarkers, selectedIncidentId))
+  }, [filteredMarkers, selectedIncidentId])
+
+  useEffect(() => {
+    const map = mapRef.current
     if (!map || !hasLoadedRef.current) {
       return
     }
@@ -401,11 +417,16 @@ export function CableMap() {
     map.setStyle(basemapStyle(theme))
     map.once('style.load', () => {
       interactionsBoundRef.current = false
-      const data = dataRef.current
-      if (!data) {
+      const cableGeoJson = cableGeoJsonRef.current
+      if (!cableGeoJson) {
         return
       }
-      addMapLayers(map, data.cableGeoJson, data.markers)
+      addMapLayers(
+        map,
+        cableGeoJson,
+        useUiStore.getState().filteredMarkers,
+        useUiStore.getState().selectedIncidentId,
+      )
       map.resize()
     })
   }, [theme])

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 ActorTier = Literal["confirmed", "suspected", "none"]
 MarkerColor = Literal["red", "yellow", "green", "gray"]
 BadgeColor = Literal["red", "yellow", "green"]
+StatusFilter = Literal["resolved", "unresolved"]
 
 
 class IncidentSummary(BaseModel):
@@ -27,6 +28,7 @@ class IncidentSummary(BaseModel):
     actor_tier: ActorTier
     marker_color: MarkerColor
     badge_color: BadgeColor
+    region: str = "Unknown"
     latitude: float | None = None
     longitude: float | None = None
     marker_group_id: str | None = None
@@ -39,8 +41,12 @@ class IncidentListItem(BaseModel):
     original_cable_name: str
     date: str
     status: str | None = None
+    cause: str | None = None
+    nation_state_suspected: str | None = None
     actor_tier: ActorTier
     marker_color: MarkerColor
+    badge_color: BadgeColor
+    region: str = "Unknown"
     latitude: float | None = None
     longitude: float | None = None
     marker_group_id: str | None = None
@@ -74,3 +80,15 @@ class HealthResponse(BaseModel):
     incident_count: int
     cable_count: int
     marker_count: int
+
+
+class FilterCount(BaseModel):
+    value: str
+    count: int
+
+
+class FilterMeta(BaseModel):
+    regions: list[FilterCount]
+    actor_tiers: list[FilterCount]
+    statuses: list[FilterCount]
+    total: int
