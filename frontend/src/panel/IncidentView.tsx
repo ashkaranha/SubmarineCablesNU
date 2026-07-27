@@ -62,6 +62,11 @@ export function IncidentView({ incident }: IncidentViewProps) {
         <div>
           <h2 className="text-lg font-semibold">{incident.original_cable_name}</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">{incident.date}</p>
+          {incident.coordinate_source === 'cable_route' ? (
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              Location approximated from cable route
+            </p>
+          ) : null}
         </div>
         <StatusBadge label={incident.status || 'Unknown'} color={incident.badge_color} />
       </div>

@@ -1,7 +1,9 @@
 export type ActorTier = 'confirmed' | 'suspected' | 'none'
-export type MarkerColor = 'red' | 'yellow' | 'green' | 'gray'
+export type MarkerFill = 'red' | 'amber' | 'slate'
+export type StatusStroke = 'resolved' | 'unresolved'
 export type BadgeColor = 'red' | 'yellow' | 'green'
 export type StatusFilter = 'resolved' | 'unresolved'
+export type CoordinateSource = 'csv' | 'landing_midpoint' | 'cable_route' | 'none'
 
 export interface IncidentSummary {
   id: string
@@ -20,13 +22,14 @@ export interface IncidentSummary {
   source?: string | null
   links: string[]
   actor_tier: ActorTier
-  marker_color: MarkerColor
+  marker_fill: MarkerFill
+  status_stroke: StatusStroke
+  resolved: boolean
   badge_color: BadgeColor
   region: string
   latitude?: number | null
   longitude?: number | null
-  marker_group_id?: string | null
-  coordinate_source: 'csv' | 'landing_midpoint' | 'none'
+  coordinate_source: CoordinateSource
 }
 
 export interface IncidentListItem {
@@ -38,21 +41,26 @@ export interface IncidentListItem {
   cause?: string | null
   nation_state_suspected?: string | null
   actor_tier: ActorTier
-  marker_color: MarkerColor
+  marker_fill: MarkerFill
+  status_stroke: StatusStroke
+  resolved: boolean
   badge_color: BadgeColor
   region: string
   latitude?: number | null
   longitude?: number | null
-  marker_group_id?: string | null
 }
 
-export interface MarkerGroup {
+export interface IncidentMarker {
   id: string
   latitude: number
   longitude: number
-  marker_color: MarkerColor
-  incident_ids: string[]
-  incident_count: number
+  actor_tier: ActorTier
+  resolved: boolean
+  marker_fill: MarkerFill
+  status_stroke: StatusStroke
+  canonical_cable_name: string
+  original_cable_name: string
+  date: string
 }
 
 export interface CableSummary {

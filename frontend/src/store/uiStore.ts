@@ -4,9 +4,9 @@ import type {
   CableDetail,
   HoverInfo,
   IncidentListItem,
+  IncidentMarker,
   IncidentQuery,
   IncidentSummary,
-  MarkerGroup,
   PanelMode,
   StatusFilter,
 } from '../types/api'
@@ -31,7 +31,7 @@ interface UiState {
   fitBoundsRequestId: number
   query: IncidentQuery
   filteredIncidents: IncidentListItem[]
-  filteredMarkers: MarkerGroup[]
+  filteredMarkers: IncidentMarker[]
   resultCount: number
   queryLoading: boolean
   setTheme: (theme: 'light' | 'dark') => void
@@ -43,7 +43,7 @@ interface UiState {
   toggleRegion: (region: string) => void
   toggleActorTier: (tier: ActorTier) => void
   setStatusFilter: (status: StatusFilter | null) => void
-  setFilteredResults: (incidents: IncidentListItem[], markers: MarkerGroup[]) => void
+  setFilteredResults: (incidents: IncidentListItem[], markers: IncidentMarker[]) => void
   setQueryLoading: (loading: boolean) => void
   openCablePanel: (name: string, detail: CableDetail) => void
   openIncidentPanel: (incident: IncidentSummary) => void

@@ -64,8 +64,12 @@ export function IncidentRail() {
   useEffect(() => {
     let cancelled = false
     setQueryLoading(true)
-    void Promise.all([fetchIncidents(query), fetchMarkers(query)])
-      .then(([incidents, markers]) => {
+    void fetchIncidents(query)
+      .then(async (incidents) => {
+        const markers = await fetchMarkers(query, incidents)
+        return { incidents, markers }
+      })
+      .then(({ incidents, markers }) => {
         if (!cancelled) {
           setFilteredResults(incidents, markers)
         }

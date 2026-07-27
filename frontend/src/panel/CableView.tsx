@@ -1,3 +1,4 @@
+import { IncidentMarkerDot } from '../map/IncidentMarkerDot'
 import type { CableDetail, IncidentSummary } from '../types/api'
 
 interface CableViewProps {
@@ -93,13 +94,20 @@ export function CableView({ cable, onSelectIncident }: CableViewProps) {
               key={incident.id}
               type="button"
               onClick={() => onSelectIncident(incident)}
-              className="flex w-full items-start justify-between gap-3 border border-[var(--border)] bg-[var(--bg)] px-3 py-3 text-left hover:border-[var(--text)]"
+              className="flex w-full items-center gap-3 border border-[var(--border)] bg-[var(--bg)] px-3 py-3 text-left hover:border-[var(--text)]"
             >
-              <div>
+              <IncidentMarkerDot
+                marker_fill={incident.marker_fill}
+                status_stroke={incident.status_stroke}
+                actor_tier={incident.actor_tier}
+                status={incident.status}
+                size="md"
+              />
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{incident.original_cable_name}</p>
                 <p className="mt-1 text-xs text-[var(--muted)]">{incident.date}</p>
               </div>
-              <span className="text-xs text-[var(--muted)]">{incident.status || '—'}</span>
+              <span className="shrink-0 text-xs text-[var(--muted)]">{incident.status || '—'}</span>
             </button>
           ))}
         </div>

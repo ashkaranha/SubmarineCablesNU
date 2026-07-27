@@ -1,7 +1,8 @@
 from typing import Literal
 
 ActorTier = Literal["confirmed", "suspected", "none"]
-MarkerColor = Literal["red", "yellow", "green", "gray"]
+MarkerFill = Literal["red", "amber", "slate"]
+StatusStroke = Literal["resolved", "unresolved"]
 BadgeColor = Literal["red", "yellow", "green"]
 
 NONE_PATTERNS = (
@@ -71,14 +72,16 @@ def is_resolved_status(status: str | None) -> bool:
     return _normalize(status).lower().startswith("resolved")
 
 
-def marker_color_for(actor_tier: ActorTier, status: str | None) -> MarkerColor:
+def marker_fill_for(actor_tier: ActorTier) -> MarkerFill:
     if actor_tier == "confirmed":
         return "red"
     if actor_tier == "suspected":
-        return "yellow"
-    if is_resolved_status(status):
-        return "green"
-    return "gray"
+        return "amber"
+    return "slate"
+
+
+def status_stroke_for(status: str | None) -> StatusStroke:
+    return "resolved" if is_resolved_status(status) else "unresolved"
 
 
 def badge_color_for(actor_tier: ActorTier, status: str | None) -> BadgeColor:
@@ -87,8 +90,3 @@ def badge_color_for(actor_tier: ActorTier, status: str | None) -> BadgeColor:
     if actor_tier == "confirmed":
         return "red"
     return "yellow"
-
-
-def marker_severity(color: MarkerColor) -> int:
-    order = {"red": 3, "yellow": 2, "gray": 1, "green": 0}
-    return order[color]

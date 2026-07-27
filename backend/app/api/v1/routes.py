@@ -7,8 +7,8 @@ from app.models.schemas import (
     FilterMeta,
     HealthResponse,
     IncidentListItem,
+    IncidentMarker,
     IncidentSummary,
-    MarkerGroup,
 )
 from app.services.data_loader import DataStore
 
@@ -34,7 +34,7 @@ def create_router(store: DataStore) -> APIRouter:
             status="ok",
             incident_count=len(store.incidents),
             cable_count=len(store.cables),
-            marker_count=len(store.marker_groups),
+            marker_count=len(store.markers),
         )
 
     @router.get("/meta/filters", response_model=FilterMeta)
@@ -74,13 +74,13 @@ def create_router(store: DataStore) -> APIRouter:
             raise HTTPException(status_code=404, detail="Incident not found")
         return incident
 
-    @router.get("/markers", response_model=list[MarkerGroup])
+    @router.get("/markers", response_model=list[IncidentMarker])
     def list_markers(
         q: str | None = Query(default=None),
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
         status: str | None = Query(default=None),
-    ) -> list[MarkerGroup]:
+    ) -> list[IncidentMarker]:
         return store.filter_markers(
             q=q,
             regions=_split_csv_param(region),

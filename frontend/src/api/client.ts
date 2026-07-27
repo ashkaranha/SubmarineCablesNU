@@ -3,10 +3,11 @@ import type {
   CableDetail,
   FilterMeta,
   IncidentListItem,
+  IncidentMarker,
   IncidentQuery,
   IncidentSummary,
-  MarkerGroup,
 } from '../types/api'
+import { normalizeMarkers } from './markerNormalization'
 
 const API_BASE = '/api/v1'
 
@@ -43,8 +44,13 @@ export function fetchCableGeoJson(): Promise<FeatureCollection> {
   return getJson<FeatureCollection>('/map/cables')
 }
 
-export function fetchMarkers(query?: Partial<IncidentQuery>): Promise<MarkerGroup[]> {
-  return getJson<MarkerGroup[]>(`/markers${buildQueryString(query)}`)
+export function fetchMarkers(
+  query?: Partial<IncidentQuery>,
+  incidents: IncidentListItem[] = [],
+): Promise<IncidentMarker[]> {
+  return getJson<unknown[]>(`/markers${buildQueryString(query)}`).then((markers) =>
+    normalizeMarkers(markers, incidents),
+  )
 }
 
 export function fetchCable(name: string): Promise<CableDetail> {

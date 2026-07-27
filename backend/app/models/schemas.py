@@ -4,9 +4,11 @@ from pydantic import BaseModel, Field
 
 
 ActorTier = Literal["confirmed", "suspected", "none"]
-MarkerColor = Literal["red", "yellow", "green", "gray"]
+MarkerFill = Literal["red", "amber", "slate"]
+StatusStroke = Literal["resolved", "unresolved"]
 BadgeColor = Literal["red", "yellow", "green"]
 StatusFilter = Literal["resolved", "unresolved"]
+CoordinateSource = Literal["csv", "landing_midpoint", "cable_route", "none"]
 
 
 class IncidentSummary(BaseModel):
@@ -26,13 +28,14 @@ class IncidentSummary(BaseModel):
     source: str | None = None
     links: list[str] = Field(default_factory=list)
     actor_tier: ActorTier
-    marker_color: MarkerColor
+    marker_fill: MarkerFill
+    status_stroke: StatusStroke
+    resolved: bool = False
     badge_color: BadgeColor
     region: str = "Unknown"
     latitude: float | None = None
     longitude: float | None = None
-    marker_group_id: str | None = None
-    coordinate_source: Literal["csv", "landing_midpoint", "none"] = "none"
+    coordinate_source: CoordinateSource = "none"
 
 
 class IncidentListItem(BaseModel):
@@ -44,21 +47,26 @@ class IncidentListItem(BaseModel):
     cause: str | None = None
     nation_state_suspected: str | None = None
     actor_tier: ActorTier
-    marker_color: MarkerColor
+    marker_fill: MarkerFill
+    status_stroke: StatusStroke
+    resolved: bool = False
     badge_color: BadgeColor
     region: str = "Unknown"
     latitude: float | None = None
     longitude: float | None = None
-    marker_group_id: str | None = None
 
 
-class MarkerGroup(BaseModel):
+class IncidentMarker(BaseModel):
     id: str
     latitude: float
     longitude: float
-    marker_color: MarkerColor
-    incident_ids: list[str]
-    incident_count: int
+    actor_tier: ActorTier
+    resolved: bool
+    marker_fill: MarkerFill
+    status_stroke: StatusStroke
+    canonical_cable_name: str
+    original_cable_name: str
+    date: str
 
 
 class CableSummary(BaseModel):
