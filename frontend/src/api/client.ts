@@ -1,10 +1,13 @@
 import type { FeatureCollection } from 'geojson'
 import type {
   CableDetail,
+  FilterMeta,
   IncidentListItem,
+  IncidentMarker,
+  IncidentQuery,
   IncidentSummary,
-  MarkerGroup,
 } from '../types/api'
+import { normalizeMarkers } from './markerNormalization'
 
 const API_BASE = '/api/v1'
 
@@ -16,12 +19,38 @@ async function getJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
+function buildQueryString(query?: Partial<IncidentQuery>): string {
+  if (!query) {
+    return ''
+  }
+  const params = new URLSearchParams()
+  if (query.q?.trim()) {
+    params.set('q', query.q.trim())
+  }
+  for (const region of query.regions ?? []) {
+    params.append('region', region)
+  }
+  for (const tier of query.actorTiers ?? []) {
+    params.append('actor_tier', tier)
+  }
+  if (query.status) {
+    params.set('status', query.status)
+  }
+  const text = params.toString()
+  return text ? `?${text}` : ''
+}
+
 export function fetchCableGeoJson(): Promise<FeatureCollection> {
   return getJson<FeatureCollection>('/map/cables')
 }
 
-export function fetchMarkers(): Promise<MarkerGroup[]> {
-  return getJson<MarkerGroup[]>('/markers')
+export function fetchMarkers(
+  query?: Partial<IncidentQuery>,
+  incidents: IncidentListItem[] = [],
+): Promise<IncidentMarker[]> {
+  return getJson<unknown[]>(`/markers${buildQueryString(query)}`).then((markers) =>
+    normalizeMarkers(markers, incidents),
+  )
 }
 
 export function fetchCable(name: string): Promise<CableDetail> {
@@ -32,6 +61,10 @@ export function fetchIncident(id: string): Promise<IncidentSummary> {
   return getJson<IncidentSummary>(`/incidents/${encodeURIComponent(id)}`)
 }
 
-export function fetchIncidents(): Promise<IncidentListItem[]> {
-  return getJson<IncidentListItem[]>('/incidents')
+export function fetchIncidents(query?: Partial<IncidentQuery>): Promise<IncidentListItem[]> {
+  return getJson<IncidentListItem[]>(`/incidents${buildQueryString(query)}`)
+}
+
+export function fetchFilterMeta(): Promise<FilterMeta> {
+  return getJson<FilterMeta>('/meta/filters')
 }

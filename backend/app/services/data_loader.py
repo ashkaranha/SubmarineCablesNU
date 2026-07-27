@@ -12,16 +12,20 @@ from app.config import settings
 from app.models.schemas import (
     CableDetail,
     CableSummary,
+    FilterCount,
+    FilterMeta,
     IncidentListItem,
+    IncidentMarker,
     IncidentSummary,
-    MarkerGroup,
 )
 from app.services.actor_tier import (
     badge_color_for,
     classify_actor_tier,
-    marker_color_for,
-    marker_severity,
+    is_resolved_status,
+    marker_fill_for,
+    status_stroke_for,
 )
+from app.services.region import classify_theater
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -69,11 +73,12 @@ class DataStore:
     incidents: list[IncidentSummary] = field(default_factory=list)
     incidents_by_id: dict[str, IncidentSummary] = field(default_factory=dict)
     incidents_by_cable: dict[str, list[IncidentSummary]] = field(default_factory=dict)
-    marker_groups: list[MarkerGroup] = field(default_factory=list)
+    markers: list[IncidentMarker] = field(default_factory=list)
     cable_geojson: dict[str, Any] = field(default_factory=dict)
     landing_geojson: dict[str, Any] = field(default_factory=dict)
     telegeography_by_name: dict[str, dict[str, Any]] = field(default_factory=dict)
     landing_coords_by_id: dict[str, tuple[float, float]] = field(default_factory=dict)
+    cable_route_midpoints: dict[str, tuple[float, float]] = field(default_factory=dict)
 
     def get_cable(self, name: str) -> CableDetail | None:
         cable_row = self.cables.get(name)
@@ -119,6 +124,138 @@ class DataStore:
             except (TypeError, ValueError):
                 pass
         return _format_length(None, row.get("shape_length"))
+
+    def to_list_item(self, incident: IncidentSummary) -> IncidentListItem:
+        return IncidentListItem(
+            id=incident.id,
+            canonical_cable_name=incident.canonical_cable_name,
+            original_cable_name=incident.original_cable_name,
+            date=incident.date,
+            status=incident.status,
+            cause=incident.cause,
+            nation_state_suspected=incident.nation_state_suspected,
+            actor_tier=incident.actor_tier,
+            marker_fill=incident.marker_fill,
+            status_stroke=incident.status_stroke,
+            resolved=incident.resolved,
+            badge_color=incident.badge_color,
+            region=incident.region,
+            latitude=incident.latitude,
+            longitude=incident.longitude,
+        )
+
+    def to_marker(self, incident: IncidentSummary) -> IncidentMarker | None:
+        if incident.latitude is None or incident.longitude is None:
+            return None
+        return IncidentMarker(
+            id=incident.id,
+            latitude=incident.latitude,
+            longitude=incident.longitude,
+            actor_tier=incident.actor_tier,
+            resolved=incident.resolved,
+            marker_fill=incident.marker_fill,
+            status_stroke=incident.status_stroke,
+            canonical_cable_name=incident.canonical_cable_name,
+            original_cable_name=incident.original_cable_name,
+            date=incident.date,
+        )
+
+    def filter_incidents(
+        self,
+        *,
+        q: str | None = None,
+        regions: list[str] | None = None,
+        actor_tiers: list[str] | None = None,
+        status: str | None = None,
+    ) -> list[IncidentSummary]:
+        query = (q or "").strip().lower()
+        region_set = {value.strip() for value in (regions or []) if value.strip()}
+        tier_set = {value.strip() for value in (actor_tiers or []) if value.strip()}
+        status_filter = (status or "").strip().lower() or None
+
+        results: list[IncidentSummary] = []
+        for incident in self.incidents:
+            if region_set and incident.region not in region_set:
+                continue
+            if tier_set and incident.actor_tier not in tier_set:
+                continue
+            if status_filter == "resolved" and not is_resolved_status(incident.status):
+                continue
+            if status_filter == "unresolved" and is_resolved_status(incident.status):
+                continue
+            if query and not _incident_matches_query(incident, query):
+                continue
+            results.append(incident)
+        return results
+
+    def filter_markers(
+        self,
+        *,
+        q: str | None = None,
+        regions: list[str] | None = None,
+        actor_tiers: list[str] | None = None,
+        status: str | None = None,
+    ) -> list[IncidentMarker]:
+        filtered = self.filter_incidents(
+            q=q,
+            regions=regions,
+            actor_tiers=actor_tiers,
+            status=status,
+        )
+        markers: list[IncidentMarker] = []
+        for incident in filtered:
+            marker = self.to_marker(incident)
+            if marker is not None:
+                markers.append(marker)
+        return markers
+
+    def filter_meta(self) -> FilterMeta:
+        region_counts: dict[str, int] = {}
+        tier_counts: dict[str, int] = {"confirmed": 0, "suspected": 0, "none": 0}
+        resolved = 0
+        unresolved = 0
+        for incident in self.incidents:
+            region_counts[incident.region] = region_counts.get(incident.region, 0) + 1
+            tier_counts[incident.actor_tier] = tier_counts.get(incident.actor_tier, 0) + 1
+            if is_resolved_status(incident.status):
+                resolved += 1
+            else:
+                unresolved += 1
+
+        regions = [
+            FilterCount(value=name, count=count)
+            for name, count in sorted(region_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        actor_tiers = [
+            FilterCount(value=name, count=tier_counts.get(name, 0))
+            for name in ("confirmed", "suspected", "none")
+        ]
+        statuses = [
+            FilterCount(value="resolved", count=resolved),
+            FilterCount(value="unresolved", count=unresolved),
+        ]
+        return FilterMeta(
+            regions=regions,
+            actor_tiers=actor_tiers,
+            statuses=statuses,
+            total=len(self.incidents),
+        )
+
+
+def _incident_matches_query(incident: IncidentSummary, query: str) -> bool:
+    haystacks = [
+        incident.canonical_cable_name,
+        incident.original_cable_name,
+        incident.specific_location,
+        incident.cause,
+        incident.suspected_actor,
+        incident.nation_state_suspected,
+        incident.source,
+        incident.status,
+        incident.region,
+        incident.outage_impact,
+    ]
+    return any(query in (value or "").lower() for value in haystacks)
 
 
 def _load_csv_rows(path: Path) -> list[dict[str, str]]:
@@ -169,36 +306,46 @@ def _landing_midpoint(
     return lat, lng
 
 
-def _group_markers(incidents: list[IncidentSummary]) -> list[MarkerGroup]:
-    groups: dict[str, list[IncidentSummary]] = {}
-    for incident in incidents:
-        if incident.latitude is None or incident.longitude is None:
-            continue
-        key = f"{incident.latitude:.4f}:{incident.longitude:.4f}"
-        groups.setdefault(key, []).append(incident)
+def _line_endpoints(coordinates: Any) -> tuple[list[float], list[float]] | None:
+    if not isinstance(coordinates, list) or not coordinates:
+        return None
+    first = coordinates[0]
+    if isinstance(first, (int, float)) and len(coordinates) >= 2:
+        # Position: [lng, lat]
+        return [float(coordinates[0]), float(coordinates[1])], [
+            float(coordinates[0]),
+            float(coordinates[1]),
+        ]
+    if isinstance(first, list) and first and isinstance(first[0], (int, float)):
+        # LineString: [[lng, lat], ...]
+        start = coordinates[0]
+        end = coordinates[-1]
+        return [float(start[0]), float(start[1])], [float(end[0]), float(end[1])]
+    if isinstance(first, list) and first and isinstance(first[0], list):
+        # MultiLineString
+        start = coordinates[0][0]
+        end = coordinates[-1][-1]
+        return [float(start[0]), float(start[1])], [float(end[0]), float(end[1])]
+    return None
 
-    marker_groups: list[MarkerGroup] = []
-    for index, (_, group_incidents) in enumerate(groups.items()):
-        group_incidents.sort(key=lambda item: _parse_date(item.date), reverse=True)
-        marker_color = max(
-            (incident.marker_color for incident in group_incidents),
-            key=marker_severity,
-        )
-        group_id = f"group-{index}"
-        for incident in group_incidents:
-            incident.marker_group_id = group_id
-        primary = group_incidents[0]
-        marker_groups.append(
-            MarkerGroup(
-                id=group_id,
-                latitude=primary.latitude or 0,
-                longitude=primary.longitude or 0,
-                marker_color=marker_color,
-                incident_ids=[incident.id for incident in group_incidents],
-                incident_count=len(group_incidents),
-            )
-        )
-    return marker_groups
+
+def _build_cable_route_midpoints(cable_geojson: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    midpoints: dict[str, tuple[float, float]] = {}
+    for feature in cable_geojson.get("features", []):
+        props = feature.get("properties", {})
+        name = (props.get("name") or "").strip()
+        if not name:
+            continue
+        geometry = feature.get("geometry") or {}
+        endpoints = _line_endpoints(geometry.get("coordinates"))
+        if not endpoints:
+            continue
+        start, end = endpoints
+        lng = (start[0] + end[0]) / 2
+        lat = (start[1] + end[1]) / 2
+        # Prefer first feature if duplicates; keep existing
+        midpoints.setdefault(name.lower(), (lat, lng))
+    return midpoints
 
 
 def load_data_store(data_dir: Path | None = None) -> DataStore:
@@ -215,6 +362,8 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         name = (cable.get("name") or "").strip()
         if name:
             store.telegeography_by_name[name.lower()] = cable
+
+    store.cable_route_midpoints = _build_cable_route_midpoints(store.cable_geojson)
 
     for feature in store.landing_geojson.get("features", []):
         props = feature.get("properties", {})
@@ -235,8 +384,10 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         nation_state = (row.get("Nation State Suspected") or "").strip() or None
         status = (row.get("Status") or "").strip() or None
         actor_tier = classify_actor_tier(nation_state)
-        marker_color = marker_color_for(actor_tier, status)
+        marker_fill = marker_fill_for(actor_tier)
+        stroke = status_stroke_for(status)
         badge_color = badge_color_for(actor_tier, status)
+        resolved = is_resolved_status(status)
 
         latitude = _parse_float(row.get("Latitude"))
         longitude = _parse_float(row.get("Longitude"))
@@ -248,6 +399,11 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
             if midpoint:
                 latitude, longitude = midpoint
                 coordinate_source = "landing_midpoint"
+            else:
+                route_mid = store.cable_route_midpoints.get(canonical.lower())
+                if route_mid:
+                    latitude, longitude = route_mid
+                    coordinate_source = "cable_route"
 
         incident = IncidentSummary(
             id=_incident_id(index),
@@ -266,8 +422,11 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
             source=(row.get("Source") or "").strip() or None,
             links=_incident_links(row),
             actor_tier=actor_tier,
-            marker_color=marker_color,
+            marker_fill=marker_fill,
+            status_stroke=stroke,
+            resolved=resolved,
             badge_color=badge_color,
+            region=classify_theater(latitude, longitude),
             latitude=latitude,
             longitude=longitude,
             coordinate_source=coordinate_source,  # type: ignore[arg-type]
@@ -275,9 +434,9 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         raw_incidents.append(incident)
 
     raw_incidents.sort(key=lambda item: _parse_date(item.date), reverse=True)
-    store.marker_groups = _group_markers(raw_incidents)
     store.incidents = raw_incidents
     store.incidents_by_id = {incident.id: incident for incident in raw_incidents}
+    store.markers = [marker for incident in raw_incidents if (marker := store.to_marker(incident))]
 
     incidents_by_cable: dict[str, list[IncidentSummary]] = {}
     for incident in raw_incidents:

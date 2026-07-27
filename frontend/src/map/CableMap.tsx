@@ -1,21 +1,32 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import maplibregl, { type MapLayerMouseEvent, type MapMouseEvent, type StyleSpecification } from 'maplibre-gl'
-import type { FeatureCollection } from 'geojson'
+import type { Feature, FeatureCollection, Point } from 'geojson'
 import {
   fetchCable,
   fetchCableGeoJson,
   fetchIncident,
   fetchIncidents,
-  fetchMarkers,
 } from '../api/client'
+import { resolveIncidentIdFromFeature } from '../api/markerNormalization'
 import { useUiStore } from '../store/uiStore'
-import type { IncidentListItem, MarkerGroup } from '../types/api'
+import type { IncidentListItem, IncidentMarker } from '../types/api'
+import { MapLegend } from './MapLegend'
+import {
+  MARKER_FILL_COLORS,
+  MARKER_STROKE_RESOLVED,
+  strokeColorFor,
+} from './markerStyles'
 
-const MARKER_COLORS: Record<string, string> = {
-  red: '#c0392b',
-  yellow: '#d4a017',
-  green: '#2d6a4f',
-  gray: '#6b7280',
+const SPIDERFY_RADIUS_DEG = 0.03
+const INCIDENT_HIT_LAYERS = ['incident-labels', 'incident-points'] as const
+const HIT_BBOX_PX = 12
+
+interface MapInteractionHandlers {
+  closePanel: () => void
+  openCablePanel: ReturnType<typeof useUiStore.getState>['openCablePanel']
+  openIncidentPanel: ReturnType<typeof useUiStore.getState>['openIncidentPanel']
+  setHoverInfo: ReturnType<typeof useUiStore.getState>['setHoverInfo']
+  incidentsByCableRef: MutableRefObject<Map<string, IncidentListItem[]>>
 }
 
 function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
@@ -51,35 +62,279 @@ function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
   }
 }
 
-function markersToGeoJson(markers: MarkerGroup[]): FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: markers.map((marker) => ({
-      type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [marker.longitude, marker.latitude],
-      },
-      properties: {
-        id: marker.id,
-        marker_color: marker.marker_color,
-        incident_count: marker.incident_count,
-        incident_ids: marker.incident_ids.join('|'),
-      },
-    })),
+function queryIncidentFeature(
+  map: maplibregl.Map,
+  point: maplibregl.Point,
+  features?: maplibregl.GeoJSONFeature[],
+): maplibregl.GeoJSONFeature | undefined {
+  const direct = features?.find(
+    (feature) => !feature.properties?.cluster_id && feature.properties?.id,
+  )
+  if (direct) {
+    return direct
   }
+
+  const layers = INCIDENT_HIT_LAYERS.filter((layer) => Boolean(map.getLayer(layer)))
+  if (layers.length === 0) {
+    return undefined
+  }
+
+  const bbox: [[number, number], [number, number]] = [
+    [point.x - HIT_BBOX_PX, point.y - HIT_BBOX_PX],
+    [point.x + HIT_BBOX_PX, point.y + HIT_BBOX_PX],
+  ]
+  const hits = map.queryRenderedFeatures(bbox, { layers: [...layers] })
+  return (
+    hits.find((feature) => feature.layer.id === 'incident-labels') ??
+    hits.find((feature) => feature.properties?.id) ??
+    hits[0]
+  )
+}
+
+function bindMapInteractions(
+  activeMap: maplibregl.Map,
+  handlers: MapInteractionHandlers,
+  boundRef: { current: boolean },
+) {
+  if (boundRef.current) {
+    return
+  }
+  boundRef.current = true
+
+  const handleIncidentClick = async (event: MapLayerMouseEvent) => {
+    event.originalEvent.stopPropagation()
+
+    const clusterFeature = event.features?.find((feature) => feature.properties?.cluster_id)
+    if (clusterFeature) {
+      const source = activeMap.getSource('incidents') as maplibregl.GeoJSONSource
+      const clusterId = Number(clusterFeature.properties?.cluster_id)
+      const zoom = await source.getClusterExpansionZoom(clusterId)
+      const geometry = clusterFeature.geometry
+      if (geometry.type === 'Point') {
+        activeMap.easeTo({ center: geometry.coordinates as [number, number], zoom })
+      }
+      return
+    }
+
+    const feature = queryIncidentFeature(activeMap, event.point, event.features)
+    if (!feature) {
+      return
+    }
+
+    const incidentId = resolveIncidentIdFromFeature(feature.properties as Record<string, unknown>)
+    if (!incidentId) {
+      return
+    }
+
+    const incident = await fetchIncident(incidentId)
+    handlers.openIncidentPanel(incident)
+
+    const trueLng = Number(feature.properties?.true_lng)
+    const trueLat = Number(feature.properties?.true_lat)
+    if (Number.isFinite(trueLng) && Number.isFinite(trueLat)) {
+      activeMap.easeTo({
+        center: [trueLng, trueLat],
+        zoom: Math.max(activeMap.getZoom(), 4),
+      })
+    }
+  }
+
+  const onIncidentMouseMove = () => {
+    activeMap.getCanvas().style.cursor = 'pointer'
+  }
+  const onIncidentMouseLeave = () => {
+    activeMap.getCanvas().style.cursor = ''
+  }
+
+  activeMap.on('mousemove', 'cables-line', (event: MapLayerMouseEvent) => {
+    activeMap.getCanvas().style.cursor = 'pointer'
+    const feature = event.features?.[0]
+    const cableName = String(feature?.properties?.name ?? '')
+    if (!cableName) {
+      return
+    }
+    activeMap.setFilter('cables-line-hover', ['==', ['get', 'name'], cableName])
+    activeMap.setPaintProperty('cables-line-hover', 'line-opacity', 1)
+
+    const incidentsForCable = handlers.incidentsByCableRef.current.get(cableName) ?? []
+    handlers.setHoverInfo({
+      cableName,
+      incidents: incidentsForCable.map((incident) => ({
+        name: incident.original_cable_name,
+        date: incident.date,
+      })),
+      x: event.point.x,
+      y: event.point.y,
+    })
+  })
+
+  activeMap.on('mouseleave', 'cables-line', () => {
+    activeMap.getCanvas().style.cursor = ''
+    if (activeMap.getLayer('cables-line-hover')) {
+      activeMap.setPaintProperty('cables-line-hover', 'line-opacity', 0)
+      const state = useUiStore.getState()
+      applyCableVisibilityFilter(
+        activeMap,
+        state.hideQuietCables,
+        uniqueCableNames(state.filteredIncidents),
+      )
+    }
+    handlers.setHoverInfo(null)
+  })
+
+  activeMap.on('mousemove', 'incident-points', onIncidentMouseMove)
+  activeMap.on('mousemove', 'incident-labels', onIncidentMouseMove)
+  activeMap.on('mouseleave', 'incident-points', onIncidentMouseLeave)
+  activeMap.on('mouseleave', 'incident-labels', onIncidentMouseLeave)
+
+  activeMap.on('click', 'cables-line', async (event: MapLayerMouseEvent) => {
+    event.originalEvent.stopPropagation()
+    const feature = event.features?.[0]
+    const cableName = String(feature?.properties?.name ?? '')
+    if (!cableName) {
+      return
+    }
+    const detail = await fetchCable(cableName)
+    handlers.openCablePanel(cableName, detail)
+  })
+
+  activeMap.on('click', 'incident-points', handleIncidentClick)
+  activeMap.on('click', 'incident-labels', handleIncidentClick)
+  activeMap.on('click', 'incident-clusters', handleIncidentClick)
+
+  activeMap.on('click', (event: MapMouseEvent) => {
+    const layers = ['cables-line', 'incident-points', 'incident-labels', 'incident-clusters']
+    const existing = layers.filter((layer) => Boolean(activeMap.getLayer(layer)))
+    if (existing.length === 0) {
+      return
+    }
+    const features = activeMap.queryRenderedFeatures(event.point, { layers: existing })
+    if (features.length === 0) {
+      handlers.closePanel()
+    }
+  })
+}
+
+function roundCoord(value: number): number {
+  return Math.round(value * 10000) / 10000
+}
+
+function spiderfyMarkers(markers: IncidentMarker[]): Array<{
+  marker: IncidentMarker
+  displayLat: number
+  displayLng: number
+}> {
+  const groups = new Map<string, IncidentMarker[]>()
+  for (const marker of markers) {
+    const key = `${roundCoord(marker.latitude)}:${roundCoord(marker.longitude)}`
+    const list = groups.get(key) ?? []
+    list.push(marker)
+    groups.set(key, list)
+  }
+
+  const placed: Array<{ marker: IncidentMarker; displayLat: number; displayLng: number }> = []
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      const marker = group[0]
+      placed.push({ marker, displayLat: marker.latitude, displayLng: marker.longitude })
+      continue
+    }
+    group.forEach((marker, index) => {
+      const angle = (2 * Math.PI * index) / group.length - Math.PI / 2
+      placed.push({
+        marker,
+        displayLat: marker.latitude + SPIDERFY_RADIUS_DEG * Math.sin(angle),
+        displayLng: marker.longitude + SPIDERFY_RADIUS_DEG * Math.cos(angle),
+      })
+    })
+  }
+  return placed
+}
+
+function markersToGeoJson(
+  markers: IncidentMarker[],
+  selectedIncidentId: string | null,
+): FeatureCollection {
+  const features: Feature<Point>[] = spiderfyMarkers(markers).map(({ marker, displayLat, displayLng }) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [displayLng, displayLat],
+    },
+    properties: {
+      id: marker.id,
+      marker_fill: marker.marker_fill,
+      status_stroke: marker.status_stroke,
+      true_lat: marker.latitude,
+      true_lng: marker.longitude,
+      date: marker.date,
+      cable: marker.canonical_cable_name,
+      selected: selectedIncidentId != null && marker.id === selectedIncidentId ? 1 : 0,
+    },
+  }))
+  return { type: 'FeatureCollection', features }
+}
+
+function applyCableVisibilityFilter(
+  map: maplibregl.Map,
+  hideQuietCables: boolean,
+  cableNames: string[],
+) {
+  if (!map.getLayer('cables-line')) {
+    return
+  }
+
+  if (!hideQuietCables) {
+    map.setFilter('cables-line', null)
+    map.setFilter('cables-line-hover', null)
+    return
+  }
+
+  if (cableNames.length === 0) {
+    map.setFilter('cables-line', ['==', ['get', 'name'], '__none__'])
+    map.setFilter('cables-line-hover', ['==', ['get', 'name'], '__none__'])
+    return
+  }
+
+  const nameFilter: maplibregl.FilterSpecification = [
+    'in',
+    ['get', 'name'],
+    ['literal', cableNames],
+  ]
+  map.setFilter('cables-line', nameFilter)
+  map.setFilter('cables-line-hover', nameFilter)
+}
+
+function uniqueCableNames(incidents: IncidentListItem[]): string[] {
+  return [...new Set(incidents.map((incident) => incident.canonical_cable_name).filter(Boolean))]
+}
+
+function unresolvedStroke(theme: 'light' | 'dark'): string {
+  return strokeColorFor('unresolved', theme)
 }
 
 function addMapLayers(
   map: maplibregl.Map,
   cableGeoJson: FeatureCollection,
-  markers: MarkerGroup[],
+  markers: IncidentMarker[],
+  selectedIncidentId: string | null,
+  theme: 'light' | 'dark',
 ) {
   if (map.getSource('cables')) {
     const cables = map.getSource('cables') as maplibregl.GeoJSONSource
     cables.setData(cableGeoJson)
     const incidents = map.getSource('incidents') as maplibregl.GeoJSONSource
-    incidents.setData(markersToGeoJson(markers))
+    incidents.setData(markersToGeoJson(markers, selectedIncidentId))
+    if (map.getLayer('incident-points')) {
+      map.setPaintProperty('incident-points', 'circle-stroke-color', [
+        'case',
+        ['==', ['get', 'selected'], 1],
+        '#111111',
+        ['==', ['get', 'status_stroke'], 'resolved'],
+        MARKER_STROKE_RESOLVED,
+        unresolvedStroke(theme),
+      ])
+    }
     return
   }
 
@@ -89,9 +344,9 @@ function addMapLayers(
     type: 'line',
     source: 'cables',
     paint: {
-      'line-color': ['coalesce', ['get', 'color'], '#5b5b5b'],
-      'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.5, 6, 3.5],
-      'line-opacity': 0.95,
+      'line-color': ['coalesce', ['get', 'color'], '#8a8a8a'],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.2, 6, 2.8],
+      'line-opacity': 0.75,
     },
   })
   map.addLayer({
@@ -107,7 +362,7 @@ function addMapLayers(
 
   map.addSource('incidents', {
     type: 'geojson',
-    data: markersToGeoJson(markers),
+    data: markersToGeoJson(markers, selectedIncidentId),
     cluster: true,
     clusterMaxZoom: 8,
     clusterRadius: 45,
@@ -146,18 +401,23 @@ function addMapLayers(
     paint: {
       'circle-color': [
         'match',
-        ['get', 'marker_color'],
+        ['get', 'marker_fill'],
         'red',
-        MARKER_COLORS.red,
-        'yellow',
-        MARKER_COLORS.yellow,
-        'green',
-        MARKER_COLORS.green,
-        MARKER_COLORS.gray,
+        MARKER_FILL_COLORS.red,
+        'amber',
+        MARKER_FILL_COLORS.amber,
+        MARKER_FILL_COLORS.slate,
       ],
-      'circle-radius': 11,
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#ffffff',
+      'circle-radius': ['case', ['==', ['get', 'selected'], 1], 14, 11],
+      'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 3.5, 2.75],
+      'circle-stroke-color': [
+        'case',
+        ['==', ['get', 'selected'], 1],
+        '#111111',
+        ['==', ['get', 'status_stroke'], 'resolved'],
+        MARKER_STROKE_RESOLVED,
+        unresolvedStroke(theme),
+      ],
     },
   })
   map.addLayer({
@@ -167,7 +427,7 @@ function addMapLayers(
     filter: ['!', ['has', 'point_count']],
     layout: {
       'text-field': '!',
-      'text-size': 14,
+      'text-size': 16,
       'text-allow-overlap': true,
       'text-ignore-placement': true,
     },
@@ -181,7 +441,7 @@ export function CableMap() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const incidentsByCableRef = useRef<Map<string, IncidentListItem[]>>(new Map())
-  const dataRef = useRef<{ cableGeoJson: FeatureCollection; markers: MarkerGroup[] } | null>(null)
+  const cableGeoJsonRef = useRef<FeatureCollection | null>(null)
   const interactionsBoundRef = useRef(false)
   const hasLoadedRef = useRef(false)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -193,9 +453,22 @@ export function CableMap() {
   const closePanel = useUiStore((state) => state.closePanel)
   const openCablePanel = useUiStore((state) => state.openCablePanel)
   const openIncidentPanel = useUiStore((state) => state.openIncidentPanel)
-  const openGroupPanel = useUiStore((state) => state.openGroupPanel)
   const setHoverInfo = useUiStore((state) => state.setHoverInfo)
   const hoverInfo = useUiStore((state) => state.hoverInfo)
+  const filteredMarkers = useUiStore((state) => state.filteredMarkers)
+  const filteredIncidents = useUiStore((state) => state.filteredIncidents)
+  const selectedIncidentId = useUiStore((state) => state.selectedIncidentId)
+  const hideQuietCables = useUiStore((state) => state.hideQuietCables)
+  const fitBoundsRequestId = useUiStore((state) => state.fitBoundsRequestId)
+  const clearFitBoundsRequest = useUiStore((state) => state.clearFitBoundsRequest)
+
+  const interactionHandlers: MapInteractionHandlers = {
+    closePanel,
+    openCablePanel,
+    openIncidentPanel,
+    setHoverInfo,
+    incidentsByCableRef,
+  }
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -205,119 +478,26 @@ export function CableMap() {
     let disposed = false
     let map: maplibregl.Map | null = null
 
-    const bindInteractions = (activeMap: maplibregl.Map) => {
-      if (interactionsBoundRef.current) {
-        return
-      }
-      interactionsBoundRef.current = true
-
-      const handleIncidentClick = async (event: MapLayerMouseEvent) => {
-        event.originalEvent.stopPropagation()
-        const feature = event.features?.[0]
-        if (!feature) {
-          return
-        }
-
-        if (feature.properties?.cluster_id) {
-          const source = activeMap.getSource('incidents') as maplibregl.GeoJSONSource
-          const clusterId = Number(feature.properties.cluster_id)
-          const zoom = await source.getClusterExpansionZoom(clusterId)
-          const geometry = feature.geometry
-          if (geometry.type === 'Point') {
-            activeMap.easeTo({ center: geometry.coordinates as [number, number], zoom })
-          }
-          return
-        }
-
-        const incidentIds = String(feature.properties?.incident_ids ?? '')
-          .split('|')
-          .filter(Boolean)
-
-        if (incidentIds.length > 1) {
-          const incidents = await Promise.all(incidentIds.map((id) => fetchIncident(id)))
-          openGroupPanel(incidents)
-          return
-        }
-
-        if (incidentIds.length === 1) {
-          const incident = await fetchIncident(incidentIds[0])
-          openIncidentPanel(incident)
-          const geometry = feature.geometry
-          if (geometry.type === 'Point') {
-            activeMap.easeTo({
-              center: geometry.coordinates as [number, number],
-              zoom: Math.max(activeMap.getZoom(), 4),
-            })
-          }
-        }
-      }
-
-      activeMap.on('mousemove', 'cables-line', (event: MapLayerMouseEvent) => {
-        activeMap.getCanvas().style.cursor = 'pointer'
-        const feature = event.features?.[0]
-        const cableName = String(feature?.properties?.name ?? '')
-        if (!cableName) {
-          return
-        }
-        activeMap.setFilter('cables-line-hover', ['==', ['get', 'name'], cableName])
-        activeMap.setPaintProperty('cables-line-hover', 'line-opacity', 1)
-
-        const incidentsForCable = incidentsByCableRef.current.get(cableName) ?? []
-        setHoverInfo({
-          cableName,
-          incidents: incidentsForCable.map((incident) => ({
-            name: incident.original_cable_name,
-            date: incident.date,
-          })),
-          x: event.point.x,
-          y: event.point.y,
-        })
-      })
-
-      activeMap.on('mouseleave', 'cables-line', () => {
-        activeMap.getCanvas().style.cursor = ''
-        if (activeMap.getLayer('cables-line-hover')) {
-          activeMap.setPaintProperty('cables-line-hover', 'line-opacity', 0)
-        }
-        setHoverInfo(null)
-      })
-
-      activeMap.on('click', 'cables-line', async (event: MapLayerMouseEvent) => {
-        event.originalEvent.stopPropagation()
-        const feature = event.features?.[0]
-        const cableName = String(feature?.properties?.name ?? '')
-        if (!cableName) {
-          return
-        }
-        const detail = await fetchCable(cableName)
-        openCablePanel(cableName, detail)
-      })
-
-      activeMap.on('click', 'incident-points', handleIncidentClick)
-      activeMap.on('click', 'incident-labels', handleIncidentClick)
-      activeMap.on('click', 'incident-clusters', handleIncidentClick)
-
-      activeMap.on('click', (event: MapMouseEvent) => {
-        const layers = ['cables-line', 'incident-points', 'incident-labels', 'incident-clusters']
-        const existing = layers.filter((layer) => Boolean(activeMap.getLayer(layer)))
-        if (existing.length === 0) {
-          return
-        }
-        const features = activeMap.queryRenderedFeatures(event.point, { layers: existing })
-        if (features.length === 0) {
-          closePanel()
-        }
-      })
-    }
-
     const setupMapContent = (activeMap: maplibregl.Map) => {
-      const data = dataRef.current
-      if (!data) {
+      const cableGeoJson = cableGeoJsonRef.current
+      if (!cableGeoJson) {
         return
       }
       try {
-        addMapLayers(activeMap, data.cableGeoJson, data.markers)
-        bindInteractions(activeMap)
+        const state = useUiStore.getState()
+        addMapLayers(
+          activeMap,
+          cableGeoJson,
+          state.filteredMarkers,
+          state.selectedIncidentId,
+          state.theme,
+        )
+        bindMapInteractions(activeMap, interactionHandlers, interactionsBoundRef)
+        applyCableVisibilityFilter(
+          activeMap,
+          state.hideQuietCables,
+          uniqueCableNames(state.filteredIncidents),
+        )
         activeMap.resize()
         setStatus('ready')
       } catch (error) {
@@ -329,9 +509,8 @@ export function CableMap() {
 
     const init = async () => {
       try {
-        const [cableGeoJson, markers, incidents] = await Promise.all([
+        const [cableGeoJson, incidents] = await Promise.all([
           fetchCableGeoJson(),
-          fetchMarkers(),
           fetchIncidents(),
         ])
 
@@ -339,7 +518,7 @@ export function CableMap() {
           return
         }
 
-        dataRef.current = { cableGeoJson, markers }
+        cableGeoJsonRef.current = cableGeoJson
         const byCable = new Map<string, IncidentListItem[]>()
         for (const incident of incidents) {
           const list = byCable.get(incident.canonical_cable_name) ?? []
@@ -390,7 +569,43 @@ export function CableMap() {
       mapRef.current = null
       interactionsBoundRef.current = false
     }
-  }, [closePanel, openCablePanel, openGroupPanel, openIncidentPanel, setHoverInfo])
+  }, [closePanel, openCablePanel, openIncidentPanel, setHoverInfo])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const source = map?.getSource('incidents') as maplibregl.GeoJSONSource | undefined
+    if (!map || !source || !hasLoadedRef.current) {
+      return
+    }
+    source.setData(markersToGeoJson(filteredMarkers, selectedIncidentId))
+  }, [filteredMarkers, selectedIncidentId])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !hasLoadedRef.current || !map.getLayer('cables-line')) {
+      return
+    }
+    applyCableVisibilityFilter(map, hideQuietCables, uniqueCableNames(filteredIncidents))
+  }, [hideQuietCables, filteredIncidents])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !hasLoadedRef.current || fitBoundsRequestId === 0) {
+      return
+    }
+
+    if (filteredMarkers.length === 0) {
+      clearFitBoundsRequest()
+      return
+    }
+
+    const bounds = new maplibregl.LngLatBounds()
+    for (const marker of filteredMarkers) {
+      bounds.extend([marker.longitude, marker.latitude])
+    }
+    map.fitBounds(bounds, { padding: 48, maxZoom: 6, duration: 700 })
+    clearFitBoundsRequest()
+  }, [fitBoundsRequestId, filteredMarkers, clearFitBoundsRequest])
 
   useEffect(() => {
     const map = mapRef.current
@@ -401,11 +616,24 @@ export function CableMap() {
     map.setStyle(basemapStyle(theme))
     map.once('style.load', () => {
       interactionsBoundRef.current = false
-      const data = dataRef.current
-      if (!data) {
+      const cableGeoJson = cableGeoJsonRef.current
+      if (!cableGeoJson) {
         return
       }
-      addMapLayers(map, data.cableGeoJson, data.markers)
+      const state = useUiStore.getState()
+      addMapLayers(
+        map,
+        cableGeoJson,
+        state.filteredMarkers,
+        state.selectedIncidentId,
+        state.theme,
+      )
+      bindMapInteractions(map, interactionHandlers, interactionsBoundRef)
+      applyCableVisibilityFilter(
+        map,
+        state.hideQuietCables,
+        uniqueCableNames(state.filteredIncidents),
+      )
       map.resize()
     })
   }, [theme])
@@ -434,10 +662,12 @@ export function CableMap() {
 
       {status === 'error' && (
         <div className="absolute left-1/2 top-16 z-10 w-[min(90vw,28rem)] -translate-x-1/2 border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-center text-sm text-[var(--text)]">
-          Could not load map data. Is the API running on port 8000?
+          Could not load map data. Is the API running on port 8001?
           {errorMessage ? <span className="mt-2 block text-[var(--muted)]">{errorMessage}</span> : null}
         </div>
       )}
+
+      {status === 'ready' && <MapLegend />}
 
       {hoverInfo && (
         <div
