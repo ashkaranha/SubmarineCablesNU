@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from functools import lru_cache
-
-from sentence_transformers import SentenceTransformer
+from typing import TYPE_CHECKING
 
 from app.config import settings
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 
 @lru_cache(maxsize=1)
-def get_embedding_model() -> SentenceTransformer:
+def get_embedding_model() -> "SentenceTransformer":
+    from sentence_transformers import SentenceTransformer
+
     return SentenceTransformer(settings.embedding_model_name)
 
 

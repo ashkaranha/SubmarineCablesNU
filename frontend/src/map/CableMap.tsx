@@ -17,7 +17,6 @@ import {
   strokeColorFor,
 } from './markerStyles'
 
-const SPIDERFY_RADIUS_DEG = 0.03
 const INCIDENT_HIT_LAYERS = ['incident-labels', 'incident-points'] as const
 const HIT_BBOX_PX = 12
 
@@ -25,8 +24,11 @@ interface MapInteractionHandlers {
   closePanel: () => void
   openCablePanel: ReturnType<typeof useUiStore.getState>['openCablePanel']
   openIncidentPanel: ReturnType<typeof useUiStore.getState>['openIncidentPanel']
+  openGroupPanel: ReturnType<typeof useUiStore.getState>['openGroupPanel']
   setHoverInfo: ReturnType<typeof useUiStore.getState>['setHoverInfo']
   incidentsByCableRef: MutableRefObject<Map<string, IncidentListItem[]>>
+  incidentsByIdRef: MutableRefObject<Map<string, IncidentListItem>>
+  locationGroupsRef: MutableRefObject<Map<string, string[]>>
 }
 
 function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
@@ -121,6 +123,32 @@ function bindMapInteractions(
       return
     }
 
+    const trueLng = Number(feature.properties?.true_lng)
+    const trueLat = Number(feature.properties?.true_lat)
+    const flyToFeature = () => {
+      if (Number.isFinite(trueLng) && Number.isFinite(trueLat)) {
+        activeMap.easeTo({
+          center: [trueLng, trueLat],
+          zoom: Math.max(activeMap.getZoom(), 4),
+        })
+      }
+    }
+
+    const count = Number(feature.properties?.count ?? 1)
+    if (count > 1) {
+      const locationKey = String(feature.properties?.location_key ?? '')
+      const ids = handlers.locationGroupsRef.current.get(locationKey) ?? []
+      const incidents = ids
+        .map((id) => handlers.incidentsByIdRef.current.get(id))
+        .filter((incident): incident is IncidentListItem => Boolean(incident))
+      if (incidents.length === 0) {
+        return
+      }
+      handlers.openGroupPanel(incidents)
+      flyToFeature()
+      return
+    }
+
     const incidentId = resolveIncidentIdFromFeature(feature.properties as Record<string, unknown>)
     if (!incidentId) {
       return
@@ -128,15 +156,7 @@ function bindMapInteractions(
 
     const incident = await fetchIncident(incidentId)
     handlers.openIncidentPanel(incident)
-
-    const trueLng = Number(feature.properties?.true_lng)
-    const trueLat = Number(feature.properties?.true_lat)
-    if (Number.isFinite(trueLng) && Number.isFinite(trueLat)) {
-      activeMap.easeTo({
-        center: [trueLng, trueLat],
-        zoom: Math.max(activeMap.getZoom(), 4),
-      })
-    }
+    flyToFeature()
   }
 
   const onIncidentMouseMove = () => {
@@ -219,11 +239,7 @@ function roundCoord(value: number): number {
   return Math.round(value * 10000) / 10000
 }
 
-function spiderfyMarkers(markers: IncidentMarker[]): Array<{
-  marker: IncidentMarker
-  displayLat: number
-  displayLng: number
-}> {
+function groupMarkersByLocation(markers: IncidentMarker[]): Map<string, IncidentMarker[]> {
   const groups = new Map<string, IncidentMarker[]>()
   for (const marker of markers) {
     const key = `${roundCoord(marker.latitude)}:${roundCoord(marker.longitude)}`
@@ -231,47 +247,51 @@ function spiderfyMarkers(markers: IncidentMarker[]): Array<{
     list.push(marker)
     groups.set(key, list)
   }
-
-  const placed: Array<{ marker: IncidentMarker; displayLat: number; displayLng: number }> = []
-  for (const group of groups.values()) {
-    if (group.length === 1) {
-      const marker = group[0]
-      placed.push({ marker, displayLat: marker.latitude, displayLng: marker.longitude })
-      continue
-    }
-    group.forEach((marker, index) => {
-      const angle = (2 * Math.PI * index) / group.length - Math.PI / 2
-      placed.push({
-        marker,
-        displayLat: marker.latitude + SPIDERFY_RADIUS_DEG * Math.sin(angle),
-        displayLng: marker.longitude + SPIDERFY_RADIUS_DEG * Math.cos(angle),
-      })
-    })
-  }
-  return placed
+  return groups
 }
 
 function markersToGeoJson(
   markers: IncidentMarker[],
   selectedIncidentId: string | null,
+  selectedGroupIncidentIds: string[],
+  locationGroupsRef: MutableRefObject<Map<string, string[]>>,
 ): FeatureCollection {
-  const features: Feature<Point>[] = spiderfyMarkers(markers).map(({ marker, displayLat, displayLng }) => ({
-    type: 'Feature',
-    geometry: {
-      type: 'Point',
-      coordinates: [displayLng, displayLat],
-    },
-    properties: {
-      id: marker.id,
-      marker_fill: marker.marker_fill,
-      status_stroke: marker.status_stroke,
-      true_lat: marker.latitude,
-      true_lng: marker.longitude,
-      date: marker.date,
-      cable: marker.canonical_cable_name,
-      selected: selectedIncidentId != null && marker.id === selectedIncidentId ? 1 : 0,
-    },
-  }))
+  const groups = groupMarkersByLocation(markers)
+  const locationGroups = new Map<string, string[]>()
+  const features: Feature<Point>[] = []
+
+  for (const [key, group] of groups) {
+    const ids = group.map((marker) => marker.id)
+    locationGroups.set(key, ids)
+
+    const representative = group[0]
+    const count = group.length
+    const isSelected =
+      (selectedIncidentId != null && ids.includes(selectedIncidentId)) ||
+      (selectedGroupIncidentIds.length > 0 && ids.some((id) => selectedGroupIncidentIds.includes(id)))
+
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [representative.longitude, representative.latitude],
+      },
+      properties: {
+        location_key: key,
+        count,
+        id: count === 1 ? representative.id : null,
+        marker_fill: count === 1 ? representative.marker_fill : null,
+        status_stroke: count === 1 ? representative.status_stroke : null,
+        true_lat: representative.latitude,
+        true_lng: representative.longitude,
+        date: representative.date,
+        cable: representative.canonical_cable_name,
+        selected: isSelected ? 1 : 0,
+      },
+    })
+  }
+
+  locationGroupsRef.current = locationGroups
   return { type: 'FeatureCollection', features }
 }
 
@@ -318,13 +338,17 @@ function addMapLayers(
   cableGeoJson: FeatureCollection,
   markers: IncidentMarker[],
   selectedIncidentId: string | null,
+  selectedGroupIncidentIds: string[],
+  locationGroupsRef: MutableRefObject<Map<string, string[]>>,
   theme: 'light' | 'dark',
 ) {
   if (map.getSource('cables')) {
     const cables = map.getSource('cables') as maplibregl.GeoJSONSource
     cables.setData(cableGeoJson)
     const incidents = map.getSource('incidents') as maplibregl.GeoJSONSource
-    incidents.setData(markersToGeoJson(markers, selectedIncidentId))
+    incidents.setData(
+      markersToGeoJson(markers, selectedIncidentId, selectedGroupIncidentIds, locationGroupsRef),
+    )
     if (map.getLayer('incident-points')) {
       map.setPaintProperty('incident-points', 'circle-stroke-color', [
         'case',
@@ -362,7 +386,7 @@ function addMapLayers(
 
   map.addSource('incidents', {
     type: 'geojson',
-    data: markersToGeoJson(markers, selectedIncidentId),
+    data: markersToGeoJson(markers, selectedIncidentId, selectedGroupIncidentIds, locationGroupsRef),
     cluster: true,
     clusterMaxZoom: 8,
     clusterRadius: 45,
@@ -400,20 +424,34 @@ function addMapLayers(
     filter: ['!', ['has', 'point_count']],
     paint: {
       'circle-color': [
-        'match',
-        ['get', 'marker_fill'],
-        'red',
-        MARKER_FILL_COLORS.red,
-        'amber',
-        MARKER_FILL_COLORS.amber,
-        MARKER_FILL_COLORS.slate,
+        'case',
+        ['>', ['get', 'count'], 1],
+        '#374151',
+        [
+          'match',
+          ['get', 'marker_fill'],
+          'red',
+          MARKER_FILL_COLORS.red,
+          'amber',
+          MARKER_FILL_COLORS.amber,
+          MARKER_FILL_COLORS.slate,
+        ],
       ],
-      'circle-radius': ['case', ['==', ['get', 'selected'], 1], 14, 11],
+      'circle-radius': [
+        'case',
+        ['==', ['get', 'selected'], 1],
+        14,
+        ['>', ['get', 'count'], 1],
+        13,
+        11,
+      ],
       'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 3.5, 2.75],
       'circle-stroke-color': [
         'case',
         ['==', ['get', 'selected'], 1],
         '#111111',
+        ['>', ['get', 'count'], 1],
+        '#ffffff',
         ['==', ['get', 'status_stroke'], 'resolved'],
         MARKER_STROKE_RESOLVED,
         unresolvedStroke(theme),
@@ -426,7 +464,7 @@ function addMapLayers(
     source: 'incidents',
     filter: ['!', ['has', 'point_count']],
     layout: {
-      'text-field': '!',
+      'text-field': ['case', ['>', ['get', 'count'], 1], ['to-string', ['get', 'count']], '!'],
       'text-size': 16,
       'text-allow-overlap': true,
       'text-ignore-placement': true,
@@ -441,6 +479,8 @@ export function CableMap() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const incidentsByCableRef = useRef<Map<string, IncidentListItem[]>>(new Map())
+  const incidentsByIdRef = useRef<Map<string, IncidentListItem>>(new Map())
+  const locationGroupsRef = useRef<Map<string, string[]>>(new Map())
   const cableGeoJsonRef = useRef<FeatureCollection | null>(null)
   const interactionsBoundRef = useRef(false)
   const hasLoadedRef = useRef(false)
@@ -453,11 +493,13 @@ export function CableMap() {
   const closePanel = useUiStore((state) => state.closePanel)
   const openCablePanel = useUiStore((state) => state.openCablePanel)
   const openIncidentPanel = useUiStore((state) => state.openIncidentPanel)
+  const openGroupPanel = useUiStore((state) => state.openGroupPanel)
   const setHoverInfo = useUiStore((state) => state.setHoverInfo)
   const hoverInfo = useUiStore((state) => state.hoverInfo)
   const filteredMarkers = useUiStore((state) => state.filteredMarkers)
   const filteredIncidents = useUiStore((state) => state.filteredIncidents)
   const selectedIncidentId = useUiStore((state) => state.selectedIncidentId)
+  const selectedGroupIncidentIds = useUiStore((state) => state.selectedGroupIncidentIds)
   const hideQuietCables = useUiStore((state) => state.hideQuietCables)
   const fitBoundsRequestId = useUiStore((state) => state.fitBoundsRequestId)
   const clearFitBoundsRequest = useUiStore((state) => state.clearFitBoundsRequest)
@@ -466,8 +508,11 @@ export function CableMap() {
     closePanel,
     openCablePanel,
     openIncidentPanel,
+    openGroupPanel,
     setHoverInfo,
     incidentsByCableRef,
+    incidentsByIdRef,
+    locationGroupsRef,
   }
 
   useEffect(() => {
@@ -490,6 +535,8 @@ export function CableMap() {
           cableGeoJson,
           state.filteredMarkers,
           state.selectedIncidentId,
+          state.selectedGroupIncidentIds,
+          locationGroupsRef,
           state.theme,
         )
         bindMapInteractions(activeMap, interactionHandlers, interactionsBoundRef)
@@ -520,12 +567,15 @@ export function CableMap() {
 
         cableGeoJsonRef.current = cableGeoJson
         const byCable = new Map<string, IncidentListItem[]>()
+        const byId = new Map<string, IncidentListItem>()
         for (const incident of incidents) {
           const list = byCable.get(incident.canonical_cable_name) ?? []
           list.push(incident)
           byCable.set(incident.canonical_cable_name, list)
+          byId.set(incident.id, incident)
         }
         incidentsByCableRef.current = byCable
+        incidentsByIdRef.current = byId
 
         map = new maplibregl.Map({
           container: containerRef.current,
@@ -577,8 +627,10 @@ export function CableMap() {
     if (!map || !source || !hasLoadedRef.current) {
       return
     }
-    source.setData(markersToGeoJson(filteredMarkers, selectedIncidentId))
-  }, [filteredMarkers, selectedIncidentId])
+    source.setData(
+      markersToGeoJson(filteredMarkers, selectedIncidentId, selectedGroupIncidentIds, locationGroupsRef),
+    )
+  }, [filteredMarkers, selectedIncidentId, selectedGroupIncidentIds])
 
   useEffect(() => {
     const map = mapRef.current
@@ -626,6 +678,8 @@ export function CableMap() {
         cableGeoJson,
         state.filteredMarkers,
         state.selectedIncidentId,
+        state.selectedGroupIncidentIds,
+        locationGroupsRef,
         state.theme,
       )
       bindMapInteractions(map, interactionHandlers, interactionsBoundRef)

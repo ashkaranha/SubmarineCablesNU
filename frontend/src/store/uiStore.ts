@@ -22,7 +22,7 @@ interface UiState {
   selectedCableName: string | null
   selectedIncidentId: string | null
   selectedGroupIncidentIds: string[]
-  groupIncidents: IncidentSummary[]
+  groupIncidents: IncidentListItem[]
   cableDetail: CableDetail | null
   incidentDetail: IncidentSummary | null
   hoverInfo: HoverInfo | null
@@ -47,7 +47,7 @@ interface UiState {
   setQueryLoading: (loading: boolean) => void
   openCablePanel: (name: string, detail: CableDetail) => void
   openIncidentPanel: (incident: IncidentSummary) => void
-  openGroupPanel: (incidents: IncidentSummary[]) => void
+  openGroupPanel: (incidents: IncidentListItem[]) => void
   closePanel: () => void
   setHoverInfo: (info: HoverInfo | null) => void
   requestFlyTo: (latitude: number, longitude: number) => void
@@ -173,7 +173,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       selectedGroupIncidentIds: incidents.map((incident) => incident.id),
       groupIncidents: incidents,
       selectedIncidentId: null,
-      incidentDetail: incidents[0] ?? null,
+      incidentDetail: null,
       hoverInfo: null,
     }),
   closePanel: () =>

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import psycopg
-from pgvector.psycopg import register_vector
+from typing import TYPE_CHECKING
 
 from app.config import settings
+
+if TYPE_CHECKING:
+    import psycopg
 
 _CABLE_COLUMNS = ["name", "owners", "region", "status", "shape_length"]
 _INCIDENT_COLUMNS = [
@@ -25,7 +27,10 @@ _INCIDENT_COLUMNS = [
 ]
 
 
-def get_connection() -> psycopg.Connection:
+def get_connection() -> "psycopg.Connection":
+    import psycopg
+    from pgvector.psycopg import register_vector
+
     conn = psycopg.connect(settings.database_url, autocommit=True)
     register_vector(conn)
     return conn

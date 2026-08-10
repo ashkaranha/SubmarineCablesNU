@@ -21,11 +21,10 @@ services:
       - "8001:8001"
     volumes:
       - ./data:/data
-    env_file:
-      - .env
     environment:
       CABLEINCIDENTS_DATA_DIR: /data
       CABLEINCIDENTS_DATABASE_URL: postgresql://cableincidents:cableincidents@db:5432/cableincidents
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

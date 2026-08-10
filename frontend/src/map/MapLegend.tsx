@@ -36,7 +36,7 @@ export function MapLegend() {
       </ul>
 
       <p className="mt-3 text-[10px] leading-snug text-[var(--muted)]">
-        Overlapping incidents are fanned out
+        A numbered marker groups multiple incidents at one location — click it for the list
       </p>
     </div>
   )
