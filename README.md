@@ -7,6 +7,7 @@ Interactive map of submarine cable incidents layered on Telegeography cable rout
 - **Frontend:** React, TypeScript, Tailwind CSS, MapLibre GL JS
 - **Backend:** FastAPI (Python)
 - **Data:** `incidents.csv`, `cables_shortened.csv`, Telegeography GeoJSON snapshot
+- **Vector DB:** PostgreSQL + [pgvector](https://github.com/pgvector/pgvector), embedded with a local `sentence-transformers` model, for semantic search over incidents and cables
 
 `combined.xlsx` is kept as an archive only and is **not** used by the application.
 
@@ -77,6 +78,44 @@ To refresh Telegeography data, re-download:
 
 Update `data/telegeography/VERSION.txt` with the fetch date.
 
+## Vector DB (semantic search)
+
+Incidents and cables can be loaded into a Postgres/pgvector database for semantic (nearest-neighbor) search, separate from the CSV-backed map API above.
+
+### 1. Start Postgres with pgvector
+
+```bash
+docker compose up -d db
+```
+
+This starts `pgvector/pgvector:pg16` on `localhost:5432` (user/password/db: `cableincidents`).
+
+### 2. Ingest the data
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m scripts.ingest_vectordb
+```
+
+This reads `data/incidents.csv` and `data/cables_shortened.csv`, builds a short text document per row, embeds each document locally with `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions, no API key required), and writes rows + embeddings into the `incidents` and `cables` tables (schema in `backend/db/schema.sql`, created automatically). Re-running the script truncates and reloads both tables.
+
+Override defaults with flags, e.g. `--database-url`, `--model`, `--data-dir`, `--batch-size`.
+
+### 3. Query via the API
+
+With the FastAPI backend running and `CABLEINCIDENTS_DATABASE_URL` pointing at the same database (defaults to `postgresql://cableincidents:cableincidents@localhost:5432/cableincidents`):
+
+```
+GET /api/v1/search?q=anchor+drag+near+taiwan&type=all&limit=10
+```
+
+- `q` — free-text query, embedded with the same model and compared by cosine similarity
+- `type` — `all` (default), `incidents`, or `cables`
+- `limit` — max results per type (default 10, max 50)
+
+Returns `{ query, incidents: [...], cables: [...] }`, each result including a `score` (cosine similarity, higher is more relevant).
+
 ## API endpoints
 
 | Method | Path | Description |
@@ -89,6 +128,7 @@ Update `data/telegeography/VERSION.txt` with the fetch date.
 | GET | `/api/v1/markers` | Map marker groups |
 | GET | `/api/v1/map/cables` | Cable GeoJSON |
 | GET | `/api/v1/map/landing-points` | Landing point GeoJSON |
+| GET | `/api/v1/search` | Semantic search over incidents/cables (pgvector) |
 
 ## Map behavior
 

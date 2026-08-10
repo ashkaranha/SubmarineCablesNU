@@ -14,5 +14,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5174",
     ]
 
+    database_url: str = "postgresql://cableincidents:cableincidents@localhost:5432/cableincidents"
+    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+
 
 settings = Settings()

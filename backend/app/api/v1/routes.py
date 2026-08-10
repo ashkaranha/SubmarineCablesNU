@@ -3,14 +3,19 @@ from fastapi.responses import JSONResponse
 
 from app.models.schemas import (
     CableDetail,
+    CableSearchResult,
     CableSummary,
     FilterMeta,
     HealthResponse,
     IncidentListItem,
     IncidentMarker,
+    IncidentSearchResult,
     IncidentSummary,
+    SearchResponse,
 )
+from app.services import vector_db
 from app.services.data_loader import DataStore
+from app.services.embeddings import embed_text
 
 router = APIRouter(prefix="/api/v1")
 
@@ -102,5 +107,30 @@ def create_router(store: DataStore) -> APIRouter:
         if incidents is None:
             raise HTTPException(status_code=404, detail="Cable not found")
         return incidents
+
+    @router.get("/search", response_model=SearchResponse)
+    def search(
+        q: str = Query(..., min_length=1),
+        search_type: str = Query(default="all", alias="type", pattern="^(all|incidents|cables)$"),
+        limit: int = Query(default=10, ge=1, le=50),
+    ) -> SearchResponse:
+        try:
+            embedding = embed_text(q)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Embedding model unavailable: {exc}") from exc
+
+        incidents: list[IncidentSearchResult] = []
+        cables: list[CableSearchResult] = []
+        try:
+            if search_type in ("all", "incidents"):
+                incidents = [
+                    IncidentSearchResult(**row) for row in vector_db.search_incidents(embedding, limit)
+                ]
+            if search_type in ("all", "cables"):
+                cables = [CableSearchResult(**row) for row in vector_db.search_cables(embedding, limit)]
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Vector database unavailable: {exc}") from exc
+
+        return SearchResponse(query=q, incidents=incidents, cables=cables)
 
     return router
