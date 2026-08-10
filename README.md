@@ -34,10 +34,10 @@ SubmarineCablesNU/
 ```bash
 cd backend
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
-API docs: http://127.0.0.1:8000/docs
+API docs: http://127.0.0.1:8001/docs
 
 ### 2. Frontend
 
@@ -49,9 +49,9 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+Open http://localhost:5174
 
-The Vite dev server proxies `/api` to the backend on port 8000.
+The Vite dev server proxies `/api` to the backend on port 8001.
 
 ## Run with Docker Compose
 
@@ -59,8 +59,8 @@ The Vite dev server proxies `/api` to the backend on port 8000.
 docker compose up --build
 ```
 
-- Web: http://localhost:5173
-- API: http://localhost:8000
+- Web: http://localhost:5174
+- API: http://localhost:8001
 
 ## Data
 
@@ -116,6 +116,16 @@ GET /api/v1/search?q=anchor+drag+near+taiwan&type=all&limit=10
 
 Returns `{ query, incidents: [...], cables: [...] }`, each result including a `score` (cosine similarity, higher is more relevant).
 
+## AI-suggested sources
+
+For a single incident, the incident detail panel has a "Find more sources" button that calls:
+
+```
+GET /api/v1/incidents/{id}/sources
+```
+
+This returns the sources already recorded in the dataset (`existing_sources`) plus, on demand, sources found live via Gemini's Google Search grounding tool (`llm_sources`) — clearly labeled in the UI as AI-found and unverified, distinct from the dataset's own sources. Requires a `GOOGLE_API_KEY` environment variable on the backend (a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)); without one, the endpoint returns a 503 and the button surfaces a friendly error instead of breaking the panel. The model defaults to `gemini-2.5-flash` (override with `CABLEINCIDENTS_GOOGLE_MODEL_NAME`).
+
 ## API endpoints
 
 | Method | Path | Description |
@@ -129,6 +139,7 @@ Returns `{ query, incidents: [...], cables: [...] }`, each result including a `s
 | GET | `/api/v1/map/cables` | Cable GeoJSON |
 | GET | `/api/v1/map/landing-points` | Landing point GeoJSON |
 | GET | `/api/v1/search` | Semantic search over incidents/cables (pgvector) |
+| GET | `/api/v1/incidents/{id}/sources` | Dataset sources + AI-found additional sources for one incident |
 
 ## Map behavior
 

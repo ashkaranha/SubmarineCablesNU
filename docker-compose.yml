@@ -21,6 +21,8 @@ services:
       - "8001:8001"
     volumes:
       - ./data:/data
+    env_file:
+      - .env
     environment:
       CABLEINCIDENTS_DATA_DIR: /data
       CABLEINCIDENTS_DATABASE_URL: postgresql://cableincidents:cableincidents@db:5432/cableincidents
@@ -31,7 +33,7 @@ services:
   web:
     build: ./frontend
     ports:
-      - "5173:5173"
+      - "5174:5174"
     environment:
       VITE_API_PROXY_TARGET: http://api:8001
     depends_on:

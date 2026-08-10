@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchCable } from '../api/client'
+import { fetchCable, fetchIncidentSources } from '../api/client'
 import { useUiStore } from '../store/uiStore'
-import type { CableDetail, IncidentSummary } from '../types/api'
+import type { CableDetail, IncidentSummary, LLMSource } from '../types/api'
 import { StatusBadge } from './StatusBadge'
 
 function displayValue(value?: string | null) {
@@ -21,9 +21,13 @@ interface IncidentViewProps {
   incident: IncidentSummary
 }
 
+type SourceSearchStatus = 'idle' | 'loading' | 'error' | 'done'
+
 export function IncidentView({ incident }: IncidentViewProps) {
   const openCablePanel = useUiStore((state) => state.openCablePanel)
   const [relatedCable, setRelatedCable] = useState<CableDetail | null>(null)
+  const [sourceSearchStatus, setSourceSearchStatus] = useState<SourceSearchStatus>('idle')
+  const [llmSources, setLlmSources] = useState<LLMSource[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -42,6 +46,23 @@ export function IncidentView({ incident }: IncidentViewProps) {
       cancelled = true
     }
   }, [incident.canonical_cable_name])
+
+  useEffect(() => {
+    setSourceSearchStatus('idle')
+    setLlmSources([])
+  }, [incident.id])
+
+  function findMoreSources() {
+    setSourceSearchStatus('loading')
+    fetchIncidentSources(incident.id)
+      .then((result) => {
+        setLlmSources(result.llm_sources)
+        setSourceSearchStatus('done')
+      })
+      .catch(() => {
+        setSourceSearchStatus('error')
+      })
+  }
 
   const fields = [
     ['Date', incident.date],
@@ -104,20 +125,79 @@ export function IncidentView({ incident }: IncidentViewProps) {
       </dl>
 
       {incident.links.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {incident.links.map((link, index) => (
-            <a
-              key={link}
-              href={link}
-              target="_blank"
-              rel="noreferrer"
-              className="border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--bg)]"
-            >
-              {linkLabel(link, `Source ${index + 1}`)}
-            </a>
-          ))}
+        <div>
+          <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Sources in our data</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {incident.links.map((link, index) => (
+              <a
+                key={link}
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] hover:bg-[var(--bg)]"
+              >
+                {linkLabel(link, `Source ${index + 1}`)}
+              </a>
+            ))}
+          </div>
         </div>
       )}
+
+      <div className="border-t border-[var(--border)] pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
+            Additional sources (found by AI)
+          </p>
+          <button
+            type="button"
+            onClick={findMoreSources}
+            disabled={sourceSearchStatus === 'loading'}
+            className="border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--bg)] disabled:cursor-default disabled:opacity-60"
+          >
+            {sourceSearchStatus === 'loading' ? 'Searching…' : 'Find more sources'}
+          </button>
+        </div>
+
+        {sourceSearchStatus === 'error' && (
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Couldn't search for additional sources right now.
+          </p>
+        )}
+
+        {sourceSearchStatus === 'done' && llmSources.length === 0 && (
+          <p className="mt-2 text-xs text-[var(--muted)]">No additional sources found.</p>
+        )}
+
+        {llmSources.length > 0 && (
+          <div className="mt-2 space-y-2">
+            <p className="text-[10px] text-[var(--muted)]">
+              Found via AI web search — not part of the original dataset and not manually
+              verified. Confirm before citing.
+            </p>
+            {llmSources.map((source) => (
+              <a
+                key={source.url}
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block border border-dashed border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--bg)]"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="shrink-0 border border-[var(--border)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-[var(--muted)]">
+                    AI found
+                  </span>
+                  <span className="font-medium">
+                    {source.title?.trim() || linkLabel(source.url, source.url)}
+                  </span>
+                </span>
+                {source.snippet ? (
+                  <span className="mt-1 block text-xs text-[var(--muted)]">{source.snippet}</span>
+                ) : null}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

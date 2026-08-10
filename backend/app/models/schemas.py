@@ -134,3 +134,15 @@ class SearchResponse(BaseModel):
     query: str
     incidents: list[IncidentSearchResult] = Field(default_factory=list)
     cables: list[CableSearchResult] = Field(default_factory=list)
+
+
+class LLMSource(BaseModel):
+    url: str
+    title: str | None = None
+    snippet: str | None = None
+
+
+class IncidentSourcesResponse(BaseModel):
+    incident_id: str
+    existing_sources: list[str]
+    llm_sources: list[LLMSource] = Field(default_factory=list)

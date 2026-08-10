@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://cableincidents:cableincidents@localhost:5432/cableincidents"
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+
+    google_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
+    google_model_name: str = "gemini-2.5-flash"
 
 
 settings = Settings()

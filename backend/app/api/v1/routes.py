@@ -10,12 +10,14 @@ from app.models.schemas import (
     IncidentListItem,
     IncidentMarker,
     IncidentSearchResult,
+    IncidentSourcesResponse,
     IncidentSummary,
     SearchResponse,
 )
 from app.services import vector_db
 from app.services.data_loader import DataStore
 from app.services.embeddings import embed_text
+from app.services.source_finder import find_additional_sources
 
 router = APIRouter(prefix="/api/v1")
 
@@ -107,6 +109,21 @@ def create_router(store: DataStore) -> APIRouter:
         if incidents is None:
             raise HTTPException(status_code=404, detail="Cable not found")
         return incidents
+
+    @router.get("/incidents/{incident_id}/sources", response_model=IncidentSourcesResponse)
+    def incident_sources(incident_id: str) -> IncidentSourcesResponse:
+        incident = store.incidents_by_id.get(incident_id)
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        try:
+            llm_sources = find_additional_sources(incident)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Source search unavailable: {exc}") from exc
+        return IncidentSourcesResponse(
+            incident_id=incident.id,
+            existing_sources=incident.links,
+            llm_sources=llm_sources,
+        )
 
     @router.get("/search", response_model=SearchResponse)
     def search(

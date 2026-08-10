@@ -5,6 +5,7 @@ import type {
   IncidentListItem,
   IncidentMarker,
   IncidentQuery,
+  IncidentSourcesResponse,
   IncidentSummary,
 } from '../types/api'
 import { normalizeMarkers } from './markerNormalization'
@@ -67,4 +68,8 @@ export function fetchIncidents(query?: Partial<IncidentQuery>): Promise<Incident
 
 export function fetchFilterMeta(): Promise<FilterMeta> {
   return getJson<FilterMeta>('/meta/filters')
+}
+
+export function fetchIncidentSources(id: string): Promise<IncidentSourcesResponse> {
+  return getJson<IncidentSourcesResponse>(`/incidents/${encodeURIComponent(id)}/sources`)
 }

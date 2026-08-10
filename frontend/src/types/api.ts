@@ -96,6 +96,18 @@ export interface IncidentQuery {
   status: StatusFilter | null
 }
 
+export interface LLMSource {
+  url: string
+  title?: string | null
+  snippet?: string | null
+}
+
+export interface IncidentSourcesResponse {
+  incident_id: string
+  existing_sources: string[]
+  llm_sources: LLMSource[]
+}
+
 export type PanelMode = 'closed' | 'cable' | 'incident' | 'group'
 
 export interface HoverInfo {
