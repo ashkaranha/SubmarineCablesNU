@@ -1,27 +1,41 @@
 """Load incidents.csv and cables_shortened.csv into Postgres/pgvector.
 
 Reads the two source CSVs, builds a short text document per row, embeds each
-document with a local sentence-transformers model, and writes rows + vectors
-into the `cables` and `incidents` tables (see backend/db/schema.sql).
+document with the Gemini embeddings API, and writes rows + vectors into the
+`cables` and `incidents` tables (see backend/db/schema.sql).
+
+Requires a `GOOGLE_API_KEY` environment variable (same key used for
+AI-found sources).
 
 Usage:
     python -m scripts.ingest_vectordb
-    python -m scripts.ingest_vectordb --database-url postgresql://... --model sentence-transformers/all-MiniLM-L6-v2
+    python -m scripts.ingest_vectordb --database-url postgresql://... --model gemini-embedding-001
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import os
+import random
+import time
 from pathlib import Path
 
 import psycopg
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types
 from pgvector.psycopg import register_vector
-from sentence_transformers import SentenceTransformer
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 DEFAULT_DATABASE_URL = "postgresql://cableincidents:cableincidents@localhost:5432/cableincidents"
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_MODEL = "gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 768
+EMBED_BATCH_SIZE = 20
+# Free-tier embed_content quota is ~100 requests/minute; pace batches to stay
+# comfortably under that instead of bursting and hitting 429s.
+EMBED_BATCH_DELAY_SECONDS = 8.0
+EMBED_MAX_RETRIES = 6
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 
 
@@ -128,6 +142,59 @@ def build_incident_rows(data_dir: Path) -> list[dict]:
     return rows
 
 
+def _retry_delay_seconds(exc: "genai_errors.ClientError", attempt: int) -> float:
+    """Best-effort extraction of the server-suggested retry delay, with a
+    growing fallback if the API didn't provide one."""
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict):
+        for item in details.get("details", []):
+            retry_delay = item.get("retryDelay") if isinstance(item, dict) else None
+            if isinstance(retry_delay, str) and retry_delay.endswith("s"):
+                try:
+                    return float(retry_delay[:-1]) + 1.0
+                except ValueError:
+                    pass
+    return min(60.0, EMBED_BATCH_DELAY_SECONDS * (2**attempt))
+
+
+def _embed_batch_with_retry(client: "genai.Client", model_name: str, batch: list[str]) -> list[list[float]]:
+    for attempt in range(EMBED_MAX_RETRIES):
+        try:
+            result = client.models.embed_content(
+                model=model_name,
+                contents=batch,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=EMBEDDING_DIMENSIONS,
+                    task_type="RETRIEVAL_DOCUMENT",
+                ),
+            )
+            return [item.values for item in result.embeddings]
+        except genai_errors.ClientError as exc:
+            if exc.code != 429 or attempt == EMBED_MAX_RETRIES - 1:
+                raise
+            delay = _retry_delay_seconds(exc, attempt)
+            print(f"  rate limited, waiting {delay:.0f}s before retrying this batch...")
+            time.sleep(delay)
+    raise RuntimeError("unreachable")  # pragma: no cover
+
+
+def embed_documents(client: "genai.Client", model_name: str, texts: list[str], batch_size: int) -> list[list[float]]:
+    embeddings: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start : start + batch_size]
+        embeddings.extend(_embed_batch_with_retry(client, model_name, batch))
+        print(f"  embedded {min(start + batch_size, len(texts))}/{len(texts)}")
+        if start + batch_size < len(texts):
+            time.sleep(EMBED_BATCH_DELAY_SECONDS)
+    return embeddings
+
+
+def fake_embed_documents(texts: list[str]) -> list[list[float]]:
+    """Random unit-ish vectors, for exercising the DB write path without
+    calling the Gemini API (see --fake-embeddings)."""
+    return [[random.uniform(-1.0, 1.0) for _ in range(EMBEDDING_DIMENSIONS)] for _ in texts]
+
+
 def _apply_schema(conn: psycopg.Connection) -> None:
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     with conn.cursor() as cur:
@@ -135,65 +202,95 @@ def _apply_schema(conn: psycopg.Connection) -> None:
             cur.execute(statement)
 
 
-def ingest(data_dir: Path, database_url: str, model_name: str, batch_size: int) -> None:
-    print(f"Loading embedding model {model_name}...")
-    model = SentenceTransformer(model_name)
+def _write_cables(conn: psycopg.Connection, cable_rows: list[dict], cable_embeddings: list[list[float]]) -> None:
+    print("Writing cables...")
+    conn.execute("TRUNCATE cables RESTART IDENTITY")
+    with conn.cursor() as cur:
+        for row, embedding in zip(cable_rows, cable_embeddings):
+            cur.execute(
+                """
+                INSERT INTO cables (name, owners, region, status, shape_length, document, embedding)
+                VALUES (%(name)s, %(owners)s, %(region)s, %(status)s, %(shape_length)s, %(document)s, %(embedding)s)
+                """,
+                {**row, "embedding": embedding},
+            )
+
+
+def _write_incidents(
+    conn: psycopg.Connection, incident_rows: list[dict], incident_embeddings: list[list[float]]
+) -> None:
+    print("Writing incidents...")
+    conn.execute("TRUNCATE incidents RESTART IDENTITY")
+    with conn.cursor() as cur:
+        for row, embedding in zip(incident_rows, incident_embeddings):
+            cur.execute(
+                """
+                INSERT INTO incidents (
+                    canonical_cable_name, original_cable_name, date, type, specific_location,
+                    cause, suspected_actor, nation_state_suspected, outage_impact, dollar_cost,
+                    duration_of_outage, status, source, links, document, embedding
+                ) VALUES (
+                    %(canonical_cable_name)s, %(original_cable_name)s, %(date)s, %(type)s, %(specific_location)s,
+                    %(cause)s, %(suspected_actor)s, %(nation_state_suspected)s, %(outage_impact)s, %(dollar_cost)s,
+                    %(duration_of_outage)s, %(status)s, %(source)s, %(links)s, %(document)s, %(embedding)s
+                )
+                """,
+                {**row, "embedding": embedding},
+            )
+
+
+def ingest(
+    data_dir: Path,
+    database_url: str,
+    model_name: str,
+    batch_size: int,
+    skip_cables: bool = False,
+    skip_incidents: bool = False,
+    fake_embeddings: bool = False,
+) -> None:
+    client = None
+    if fake_embeddings:
+        print("Using FAKE random embeddings (no Gemini calls) -- for testing the DB path only.")
+    else:
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise SystemExit("GOOGLE_API_KEY environment variable is required to compute embeddings.")
+        client = genai.Client(api_key=api_key)
 
     cable_rows = build_cable_rows(data_dir)
     incident_rows = build_incident_rows(data_dir)
     print(f"Loaded {len(cable_rows)} cables, {len(incident_rows)} incidents")
-
-    print("Computing embeddings...")
-    cable_embeddings = model.encode(
-        [row["document"] for row in cable_rows],
-        batch_size=batch_size,
-        normalize_embeddings=True,
-        show_progress_bar=True,
-    )
-    incident_embeddings = model.encode(
-        [row["document"] for row in incident_rows],
-        batch_size=batch_size,
-        normalize_embeddings=True,
-        show_progress_bar=True,
-    )
 
     print("Connecting to database...")
     with psycopg.connect(database_url, autocommit=True) as conn:
         _apply_schema(conn)
         register_vector(conn)
 
-        print("Writing cables...")
-        conn.execute("TRUNCATE cables RESTART IDENTITY")
-        with conn.cursor() as cur:
-            for row, embedding in zip(cable_rows, cable_embeddings):
-                cur.execute(
-                    """
-                    INSERT INTO cables (name, owners, region, status, shape_length, document, embedding)
-                    VALUES (%(name)s, %(owners)s, %(region)s, %(status)s, %(shape_length)s, %(document)s, %(embedding)s)
-                    """,
-                    {**row, "embedding": embedding},
+        if skip_cables:
+            print("Skipping cables (--skip-cables).")
+        else:
+            print(f"Embedding cables with {model_name}...")
+            if fake_embeddings:
+                cable_embeddings = fake_embed_documents([row["document"] for row in cable_rows])
+            else:
+                cable_embeddings = embed_documents(
+                    client, model_name, [row["document"] for row in cable_rows], batch_size
                 )
+            _write_cables(conn, cable_rows, cable_embeddings)
 
-        print("Writing incidents...")
-        conn.execute("TRUNCATE incidents RESTART IDENTITY")
-        with conn.cursor() as cur:
-            for row, embedding in zip(incident_rows, incident_embeddings):
-                cur.execute(
-                    """
-                    INSERT INTO incidents (
-                        canonical_cable_name, original_cable_name, date, type, specific_location,
-                        cause, suspected_actor, nation_state_suspected, outage_impact, dollar_cost,
-                        duration_of_outage, status, source, links, document, embedding
-                    ) VALUES (
-                        %(canonical_cable_name)s, %(original_cable_name)s, %(date)s, %(type)s, %(specific_location)s,
-                        %(cause)s, %(suspected_actor)s, %(nation_state_suspected)s, %(outage_impact)s, %(dollar_cost)s,
-                        %(duration_of_outage)s, %(status)s, %(source)s, %(links)s, %(document)s, %(embedding)s
-                    )
-                    """,
-                    {**row, "embedding": embedding},
+        if skip_incidents:
+            print("Skipping incidents (--skip-incidents).")
+        else:
+            print(f"Embedding incidents with {model_name}...")
+            if fake_embeddings:
+                incident_embeddings = fake_embed_documents([row["document"] for row in incident_rows])
+            else:
+                incident_embeddings = embed_documents(
+                    client, model_name, [row["document"] for row in incident_rows], batch_size
                 )
+            _write_incidents(conn, incident_rows, incident_embeddings)
 
-    print(f"Done: {len(cable_rows)} cables, {len(incident_rows)} incidents written.")
+    print("Done.")
 
 
 def main() -> None:
@@ -201,9 +298,29 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--database-url", default=DEFAULT_DATABASE_URL)
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=EMBED_BATCH_SIZE)
+    parser.add_argument(
+        "--skip-cables", action="store_true", help="Skip (re-)embedding cables, e.g. if already ingested."
+    )
+    parser.add_argument(
+        "--skip-incidents", action="store_true", help="Skip (re-)embedding incidents, e.g. if already ingested."
+    )
+    parser.add_argument(
+        "--fake-embeddings",
+        action="store_true",
+        help="Use random vectors instead of calling the Gemini API. For testing the DB write path "
+        "(schema, connectivity, inserts) without spending embedding quota. Overwritten by a real run later.",
+    )
     args = parser.parse_args()
-    ingest(args.data_dir, args.database_url, args.model, args.batch_size)
+    ingest(
+        args.data_dir,
+        args.database_url,
+        args.model,
+        args.batch_size,
+        skip_cables=args.skip_cables,
+        skip_incidents=args.skip_incidents,
+        fake_embeddings=args.fake_embeddings,
+    )
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import type {
 } from '../types/api'
 import { normalizeMarkers } from './markerNormalization'
 
-const API_BASE = '/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`)

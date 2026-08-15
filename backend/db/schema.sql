@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS cables (
     status TEXT,
     shape_length DOUBLE PRECISION,
     document TEXT NOT NULL,
-    embedding vector(384) NOT NULL
+    embedding vector(768) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS incidents (
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     source TEXT,
     links TEXT[] NOT NULL DEFAULT '{}',
     document TEXT NOT NULL,
-    embedding vector(384) NOT NULL
+    embedding vector(768) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS cables_embedding_idx
