@@ -100,3 +100,49 @@ class FilterMeta(BaseModel):
     actor_tiers: list[FilterCount]
     statuses: list[FilterCount]
     total: int
+
+
+class CableSearchResult(BaseModel):
+    name: str
+    owners: str | None = None
+    region: str | None = None
+    status: str | None = None
+    shape_length: float | None = None
+    score: float
+
+
+class IncidentSearchResult(BaseModel):
+    id: int
+    canonical_cable_name: str
+    original_cable_name: str | None = None
+    date: str | None = None
+    type: str | None = None
+    specific_location: str | None = None
+    cause: str | None = None
+    suspected_actor: str | None = None
+    nation_state_suspected: str | None = None
+    outage_impact: str | None = None
+    dollar_cost: str | None = None
+    duration_of_outage: str | None = None
+    status: str | None = None
+    source: str | None = None
+    links: list[str] = Field(default_factory=list)
+    score: float
+
+
+class SearchResponse(BaseModel):
+    query: str
+    incidents: list[IncidentSearchResult] = Field(default_factory=list)
+    cables: list[CableSearchResult] = Field(default_factory=list)
+
+
+class LLMSource(BaseModel):
+    url: str
+    title: str | None = None
+    snippet: str | None = None
+
+
+class IncidentSourcesResponse(BaseModel):
+    incident_id: str
+    existing_sources: list[str]
+    llm_sources: list[LLMSource] = Field(default_factory=list)

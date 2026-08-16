@@ -5,16 +5,23 @@ import type {
   IncidentListItem,
   IncidentMarker,
   IncidentQuery,
+  IncidentSourcesResponse,
   IncidentSummary,
+  SemanticSearchResponse,
+  SemanticSearchType,
 } from '../types/api'
 import { normalizeMarkers } from './markerNormalization'
 
-const API_BASE = '/api/v1'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`)
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`)
+    const detail = await response
+      .json()
+      .then((body: { detail?: string }) => body?.detail)
+      .catch(() => null)
+    throw new Error(detail || `Request failed: ${response.status}`)
   }
   return response.json() as Promise<T>
 }
@@ -67,4 +74,17 @@ export function fetchIncidents(query?: Partial<IncidentQuery>): Promise<Incident
 
 export function fetchFilterMeta(): Promise<FilterMeta> {
   return getJson<FilterMeta>('/meta/filters')
+}
+
+export function fetchIncidentSources(id: string): Promise<IncidentSourcesResponse> {
+  return getJson<IncidentSourcesResponse>(`/incidents/${encodeURIComponent(id)}/sources`)
+}
+
+export function fetchSemanticSearch(
+  query: string,
+  type: SemanticSearchType = 'all',
+  limit = 10,
+): Promise<SemanticSearchResponse> {
+  const params = new URLSearchParams({ q: query, type, limit: String(limit) })
+  return getJson<SemanticSearchResponse>(`/search?${params.toString()}`)
 }
