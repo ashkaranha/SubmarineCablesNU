@@ -138,10 +138,21 @@ export interface CableSearchResult {
 
 export type SemanticSearchType = 'all' | 'incidents' | 'cables'
 
+export interface AggregateItem {
+  label: string
+  count: number
+}
+
+export interface AggregateResult {
+  title: string
+  items: AggregateItem[]
+}
+
 export interface SemanticSearchResponse {
   query: string
   incidents: IncidentSearchResult[]
   cables: CableSearchResult[]
+  aggregate?: AggregateResult | null
 }
 
 export type PanelMode = 'closed' | 'cable' | 'incident' | 'group'
