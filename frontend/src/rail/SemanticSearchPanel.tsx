@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { fetchCable, fetchIncident, fetchSemanticSearch } from '../api/client'
 import { useUiStore } from '../store/uiStore'
-import type { CableSearchResult, IncidentSearchResult } from '../types/api'
+import type { AggregateResult, CableSearchResult, IncidentSearchResult } from '../types/api'
 
 type SearchStatus = 'idle' | 'loading' | 'error' | 'done'
 
@@ -15,6 +15,7 @@ export function SemanticSearchPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [incidents, setIncidents] = useState<IncidentSearchResult[]>([])
   const [cables, setCables] = useState<CableSearchResult[]>([])
+  const [aggregate, setAggregate] = useState<AggregateResult | null>(null)
 
   const runSearch = (event: FormEvent) => {
     event.preventDefault()
@@ -28,11 +29,13 @@ export function SemanticSearchPanel() {
       .then((result) => {
         setIncidents(result.incidents)
         setCables(result.cables)
+        setAggregate(result.aggregate ?? null)
         setStatus('done')
       })
       .catch((error: unknown) => {
         setIncidents([])
         setCables([])
+        setAggregate(null)
         setStatus('error')
         setErrorMessage(error instanceof Error ? error.message : 'Search failed')
       })
@@ -50,6 +53,13 @@ export function SemanticSearchPanel() {
     const detail = await fetchCable(result.name)
     useUiStore.getState().openCablePanel(result.name, detail)
   }
+
+  const handleSelectAggregateCable = async (name: string) => {
+    const detail = await fetchCable(name)
+    useUiStore.getState().openCablePanel(name, detail)
+  }
+
+  const isCableAggregate = aggregate?.title.toLowerCase().includes('cable') ?? false
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -93,8 +103,49 @@ export function SemanticSearchPanel() {
           </div>
         )}
 
-        {status === 'done' && incidents.length === 0 && cables.length === 0 && (
-          <p className="px-4 py-8 text-sm text-[var(--muted)]">No matches found.</p>
+        {status === 'done' &&
+          !aggregate &&
+          incidents.length === 0 &&
+          cables.length === 0 && (
+            <p className="px-4 py-8 text-sm text-[var(--muted)]">No matches found.</p>
+          )}
+
+        {aggregate && aggregate.items.length > 0 && (
+          <div>
+            <p className="px-4 pt-3 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]">
+              {aggregate.title}
+            </p>
+            <ol className="divide-y divide-[var(--border)]">
+              {aggregate.items.map((item, index) => {
+                const row = (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm leading-snug">
+                      <span className="mr-2 text-[var(--muted)]">{index + 1}.</span>
+                      {item.label}
+                    </span>
+                    <span className="shrink-0 text-xs text-[var(--muted)]">
+                      {item.count} {item.count === 1 ? 'incident' : 'incidents'}
+                    </span>
+                  </div>
+                )
+                return (
+                  <li key={`${item.label}-${index}`}>
+                    {isCableAggregate ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleSelectAggregateCable(item.label)}
+                        className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--bg)]"
+                      >
+                        {row}
+                      </button>
+                    ) : (
+                      <div className="px-4 py-3">{row}</div>
+                    )}
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
         )}
 
         {incidents.length > 0 && (
