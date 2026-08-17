@@ -130,10 +130,21 @@ class IncidentSearchResult(BaseModel):
     score: float
 
 
+class AggregateItem(BaseModel):
+    label: str
+    count: int
+
+
+class AggregateResult(BaseModel):
+    title: str
+    items: list[AggregateItem] = Field(default_factory=list)
+
+
 class SearchResponse(BaseModel):
     query: str
     incidents: list[IncidentSearchResult] = Field(default_factory=list)
     cables: list[CableSearchResult] = Field(default_factory=list)
+    aggregate: AggregateResult | None = None
 
 
 class LLMSource(BaseModel):
