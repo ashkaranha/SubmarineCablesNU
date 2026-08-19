@@ -218,7 +218,7 @@ export function IncidentRail() {
                 : 'text-[var(--muted)] hover:text-[var(--text)]'
             }`}
           >
-            AI search
+            AI search (WIP)
           </button>
         </div>
 
