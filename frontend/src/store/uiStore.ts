@@ -22,7 +22,7 @@ interface UiState {
   selectedCableName: string | null
   selectedIncidentId: string | null
   selectedGroupIncidentIds: string[]
-  groupIncidents: IncidentSummary[]
+  groupIncidents: IncidentListItem[]
   cableDetail: CableDetail | null
   incidentDetail: IncidentSummary | null
   hoverInfo: HoverInfo | null
@@ -43,11 +43,13 @@ interface UiState {
   toggleRegion: (region: string) => void
   toggleActorTier: (tier: ActorTier) => void
   setStatusFilter: (status: StatusFilter | null) => void
+  toggleSuspectedCountry: (country: string) => void
+  toggleCableType: (cableType: string) => void
   setFilteredResults: (incidents: IncidentListItem[], markers: IncidentMarker[]) => void
   setQueryLoading: (loading: boolean) => void
   openCablePanel: (name: string, detail: CableDetail) => void
   openIncidentPanel: (incident: IncidentSummary) => void
-  openGroupPanel: (incidents: IncidentSummary[]) => void
+  openGroupPanel: (incidents: IncidentListItem[]) => void
   closePanel: () => void
   setHoverInfo: (info: HoverInfo | null) => void
   requestFlyTo: (latitude: number, longitude: number) => void
@@ -63,6 +65,8 @@ const emptyQuery: IncidentQuery = {
   regions: [],
   actorTiers: [],
   status: null,
+  suspectedCountries: [],
+  cableTypes: [],
 }
 
 function readTheme(): 'light' | 'dark' {
@@ -138,6 +142,20 @@ export const useUiStore = create<UiState>((set, get) => ({
         status: get().query.status === status ? null : status,
       },
     }),
+  toggleSuspectedCountry: (country) =>
+    set({
+      query: {
+        ...get().query,
+        suspectedCountries: toggleInList(get().query.suspectedCountries, country),
+      },
+    }),
+  toggleCableType: (cableType) =>
+    set({
+      query: {
+        ...get().query,
+        cableTypes: toggleInList(get().query.cableTypes, cableType),
+      },
+    }),
   setFilteredResults: (incidents, markers) =>
     set({
       filteredIncidents: incidents,
@@ -173,7 +191,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       selectedGroupIncidentIds: incidents.map((incident) => incident.id),
       groupIncidents: incidents,
       selectedIncidentId: null,
-      incidentDetail: incidents[0] ?? null,
+      incidentDetail: null,
       hoverInfo: null,
     }),
   closePanel: () =>

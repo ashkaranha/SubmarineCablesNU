@@ -21,6 +21,7 @@ from app.models.schemas import (
 from app.services.actor_tier import (
     badge_color_for,
     classify_actor_tier,
+    extract_suspected_countries,
     is_resolved_status,
     marker_fill_for,
     status_stroke_for,
@@ -131,6 +132,7 @@ class DataStore:
             canonical_cable_name=incident.canonical_cable_name,
             original_cable_name=incident.original_cable_name,
             date=incident.date,
+            type=incident.type,
             status=incident.status,
             cause=incident.cause,
             nation_state_suspected=incident.nation_state_suspected,
@@ -142,6 +144,7 @@ class DataStore:
             region=incident.region,
             latitude=incident.latitude,
             longitude=incident.longitude,
+            suspected_countries=incident.suspected_countries,
         )
 
     def to_marker(self, incident: IncidentSummary) -> IncidentMarker | None:
@@ -167,11 +170,15 @@ class DataStore:
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
         status: str | None = None,
+        suspected_countries: list[str] | None = None,
+        cable_types: list[str] | None = None,
     ) -> list[IncidentSummary]:
         query = (q or "").strip().lower()
         region_set = {value.strip() for value in (regions or []) if value.strip()}
         tier_set = {value.strip() for value in (actor_tiers or []) if value.strip()}
         status_filter = (status or "").strip().lower() or None
+        country_set = {value.strip() for value in (suspected_countries or []) if value.strip()}
+        type_set = {value.strip() for value in (cable_types or []) if value.strip()}
 
         results: list[IncidentSummary] = []
         for incident in self.incidents:
@@ -182,6 +189,10 @@ class DataStore:
             if status_filter == "resolved" and not is_resolved_status(incident.status):
                 continue
             if status_filter == "unresolved" and is_resolved_status(incident.status):
+                continue
+            if country_set and not country_set.intersection(incident.suspected_countries):
+                continue
+            if type_set and incident.type not in type_set:
                 continue
             if query and not _incident_matches_query(incident, query):
                 continue
@@ -195,12 +206,16 @@ class DataStore:
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
         status: str | None = None,
+        suspected_countries: list[str] | None = None,
+        cable_types: list[str] | None = None,
     ) -> list[IncidentMarker]:
         filtered = self.filter_incidents(
             q=q,
             regions=regions,
             actor_tiers=actor_tiers,
             status=status,
+            suspected_countries=suspected_countries,
+            cable_types=cable_types,
         )
         markers: list[IncidentMarker] = []
         for incident in filtered:
@@ -212,6 +227,8 @@ class DataStore:
     def filter_meta(self) -> FilterMeta:
         region_counts: dict[str, int] = {}
         tier_counts: dict[str, int] = {"confirmed": 0, "suspected": 0, "none": 0}
+        country_counts: dict[str, int] = {}
+        type_counts: dict[str, int] = {}
         resolved = 0
         unresolved = 0
         for incident in self.incidents:
@@ -221,6 +238,10 @@ class DataStore:
                 resolved += 1
             else:
                 unresolved += 1
+            for country in incident.suspected_countries:
+                country_counts[country] = country_counts.get(country, 0) + 1
+            if incident.type:
+                type_counts[incident.type] = type_counts.get(incident.type, 0) + 1
 
         regions = [
             FilterCount(value=name, count=count)
@@ -234,10 +255,20 @@ class DataStore:
             FilterCount(value="resolved", count=resolved),
             FilterCount(value="unresolved", count=unresolved),
         ]
+        suspected_countries = [
+            FilterCount(value=name, count=count)
+            for name, count in sorted(country_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        cable_types = [
+            FilterCount(value=name, count=count)
+            for name, count in sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
         return FilterMeta(
             regions=regions,
             actor_tiers=actor_tiers,
             statuses=statuses,
+            suspected_countries=suspected_countries,
+            cable_types=cable_types,
             total=len(self.incidents),
         )
 
@@ -384,6 +415,7 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         nation_state = (row.get("Nation State Suspected") or "").strip() or None
         status = (row.get("Status") or "").strip() or None
         actor_tier = classify_actor_tier(nation_state)
+        suspected_countries = extract_suspected_countries(nation_state)
         marker_fill = marker_fill_for(actor_tier)
         stroke = status_stroke_for(status)
         badge_color = badge_color_for(actor_tier, status)
@@ -430,6 +462,7 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
             latitude=latitude,
             longitude=longitude,
             coordinate_source=coordinate_source,  # type: ignore[arg-type]
+            suspected_countries=suspected_countries,
         )
         raw_incidents.append(incident)
 
