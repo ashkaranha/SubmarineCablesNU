@@ -1,6 +1,7 @@
 import type { FeatureCollection } from 'geojson'
 import type {
   CableDetail,
+  CableSummary,
   FilterMeta,
   IncidentListItem,
   IncidentMarker,
@@ -68,6 +69,10 @@ export function fetchMarkers(
 
 export function fetchCable(name: string): Promise<CableDetail> {
   return getJson<CableDetail>(`/cables/${encodeURIComponent(name)}`)
+}
+
+export function fetchCables(): Promise<CableSummary[]> {
+  return getJson<CableSummary[]>('/cables')
 }
 
 export function fetchIncident(id: string): Promise<IncidentSummary> {
