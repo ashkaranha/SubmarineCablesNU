@@ -36,6 +36,7 @@ class IncidentSummary(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     coordinate_source: CoordinateSource = "none"
+    suspected_countries: list[str] = Field(default_factory=list)
 
 
 class IncidentListItem(BaseModel):
@@ -43,6 +44,7 @@ class IncidentListItem(BaseModel):
     canonical_cable_name: str
     original_cable_name: str
     date: str
+    type: str | None = None
     status: str | None = None
     cause: str | None = None
     nation_state_suspected: str | None = None
@@ -54,6 +56,7 @@ class IncidentListItem(BaseModel):
     region: str = "Unknown"
     latitude: float | None = None
     longitude: float | None = None
+    suspected_countries: list[str] = Field(default_factory=list)
 
 
 class IncidentMarker(BaseModel):
@@ -99,6 +102,8 @@ class FilterMeta(BaseModel):
     regions: list[FilterCount]
     actor_tiers: list[FilterCount]
     statuses: list[FilterCount]
+    suspected_countries: list[FilterCount]
+    cable_types: list[FilterCount]
     total: int
 
 

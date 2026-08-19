@@ -42,6 +42,8 @@ export function IncidentRail() {
   const toggleRegion = useUiStore((state) => state.toggleRegion)
   const toggleActorTier = useUiStore((state) => state.toggleActorTier)
   const setStatusFilter = useUiStore((state) => state.setStatusFilter)
+  const toggleSuspectedCountry = useUiStore((state) => state.toggleSuspectedCountry)
+  const toggleCableType = useUiStore((state) => state.toggleCableType)
   const setFilteredResults = useUiStore((state) => state.setFilteredResults)
   const setQueryLoading = useUiStore((state) => state.setQueryLoading)
   const selectIncidentFromList = useUiStore((state) => state.selectIncidentFromList)
@@ -98,14 +100,23 @@ export function IncidentRail() {
 
   const clearFilters = () => {
     setSearchDraft('')
-    setQuery({ q: '', regions: [], actorTiers: [], status: null })
+    setQuery({
+      q: '',
+      regions: [],
+      actorTiers: [],
+      status: null,
+      suspectedCountries: [],
+      cableTypes: [],
+    })
   }
 
   const hasActiveFilters =
     Boolean(query.q.trim()) ||
     query.regions.length > 0 ||
     query.actorTiers.length > 0 ||
-    query.status != null
+    query.status != null ||
+    query.suspectedCountries.length > 0 ||
+    query.cableTypes.length > 0
 
   return (
     <aside className="pointer-events-auto absolute bottom-0 left-0 top-0 z-20 flex w-[340px] flex-col border-r border-[var(--border)] bg-[var(--surface)]">
@@ -241,6 +252,52 @@ export function IncidentRail() {
                     >
                       {STATUS_LABELS[status]}
                       <span className="ml-1 opacity-70">{count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </FilterSection>
+
+            <FilterSection label="Suspected country">
+              <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+                {(meta?.suspected_countries ?? []).map((item) => {
+                  const active = query.suspectedCountries.includes(item.value)
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => toggleSuspectedCountry(item.value)}
+                      className={`border px-2 py-1 text-xs ${
+                        active
+                          ? 'border-[var(--text)] bg-[var(--text)] text-[var(--surface)]'
+                          : 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--text)] hover:text-[var(--text)]'
+                      }`}
+                    >
+                      {item.value}
+                      <span className="ml-1 opacity-70">{item.count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </FilterSection>
+
+            <FilterSection label="Cable type">
+              <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+                {(meta?.cable_types ?? []).map((item) => {
+                  const active = query.cableTypes.includes(item.value)
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => toggleCableType(item.value)}
+                      className={`border px-2 py-1 text-xs ${
+                        active
+                          ? 'border-[var(--text)] bg-[var(--text)] text-[var(--surface)]'
+                          : 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--text)] hover:text-[var(--text)]'
+                      }`}
+                    >
+                      {item.value}
+                      <span className="ml-1 opacity-70">{item.count}</span>
                     </button>
                   )
                 })}

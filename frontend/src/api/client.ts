@@ -43,6 +43,12 @@ function buildQueryString(query?: Partial<IncidentQuery>): string {
   if (query.status) {
     params.set('status', query.status)
   }
+  for (const country of query.suspectedCountries ?? []) {
+    params.append('suspected_country', country)
+  }
+  for (const cableType of query.cableTypes ?? []) {
+    params.append('cable_type', cableType)
+  }
   const text = params.toString()
   return text ? `?${text}` : ''
 }

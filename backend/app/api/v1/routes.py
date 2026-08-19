@@ -65,12 +65,16 @@ def create_router(store: DataStore) -> APIRouter:
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
         status: str | None = Query(default=None),
+        suspected_country: list[str] | None = Query(default=None),
+        cable_type: list[str] | None = Query(default=None),
     ) -> list[IncidentListItem]:
         filtered = store.filter_incidents(
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
             status=status,
+            suspected_countries=_split_csv_param(suspected_country),
+            cable_types=_split_csv_param(cable_type),
         )
         return [store.to_list_item(incident) for incident in filtered]
 
@@ -87,12 +91,16 @@ def create_router(store: DataStore) -> APIRouter:
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
         status: str | None = Query(default=None),
+        suspected_country: list[str] | None = Query(default=None),
+        cable_type: list[str] | None = Query(default=None),
     ) -> list[IncidentMarker]:
         return store.filter_markers(
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
             status=status,
+            suspected_countries=_split_csv_param(suspected_country),
+            cable_types=_split_csv_param(cable_type),
         )
 
     @router.get("/map/cables")

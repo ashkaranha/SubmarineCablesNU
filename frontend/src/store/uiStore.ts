@@ -43,6 +43,8 @@ interface UiState {
   toggleRegion: (region: string) => void
   toggleActorTier: (tier: ActorTier) => void
   setStatusFilter: (status: StatusFilter | null) => void
+  toggleSuspectedCountry: (country: string) => void
+  toggleCableType: (cableType: string) => void
   setFilteredResults: (incidents: IncidentListItem[], markers: IncidentMarker[]) => void
   setQueryLoading: (loading: boolean) => void
   openCablePanel: (name: string, detail: CableDetail) => void
@@ -63,6 +65,8 @@ const emptyQuery: IncidentQuery = {
   regions: [],
   actorTiers: [],
   status: null,
+  suspectedCountries: [],
+  cableTypes: [],
 }
 
 function readTheme(): 'light' | 'dark' {
@@ -136,6 +140,20 @@ export const useUiStore = create<UiState>((set, get) => ({
       query: {
         ...get().query,
         status: get().query.status === status ? null : status,
+      },
+    }),
+  toggleSuspectedCountry: (country) =>
+    set({
+      query: {
+        ...get().query,
+        suspectedCountries: toggleInList(get().query.suspectedCountries, country),
+      },
+    }),
+  toggleCableType: (cableType) =>
+    set({
+      query: {
+        ...get().query,
+        cableTypes: toggleInList(get().query.cableTypes, cableType),
       },
     }),
   setFilteredResults: (incidents, markers) =>
