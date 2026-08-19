@@ -21,6 +21,11 @@ from app.services.source_finder import find_additional_sources
 
 router = APIRouter(prefix="/api/v1")
 
+# Cosine similarity below this is treated as "not actually related" and dropped from
+# semantic search results, so an off-topic query returns few/no matches instead of
+# padding out to `limit` with the least-bad nearest neighbors in the corpus.
+MIN_SEMANTIC_SCORE = 0.3
+
 
 def _split_csv_param(values: list[str] | None) -> list[str]:
     if not values:
@@ -138,6 +143,7 @@ def create_router(store: DataStore) -> APIRouter:
         q: str = Query(..., min_length=1),
         search_type: str = Query(default="all", alias="type", pattern="^(all|incidents|cables)$"),
         limit: int = Query(default=10, ge=1, le=50),
+        min_score: float = Query(default=MIN_SEMANTIC_SCORE, ge=0, le=1),
     ) -> SearchResponse:
         try:
             embedding = embed_text(q)
@@ -149,10 +155,16 @@ def create_router(store: DataStore) -> APIRouter:
         try:
             if search_type in ("all", "incidents"):
                 incidents = [
-                    IncidentSearchResult(**row) for row in vector_db.search_incidents(embedding, limit)
+                    IncidentSearchResult(**row)
+                    for row in vector_db.search_incidents(embedding, limit)
+                    if row["score"] >= min_score
                 ]
             if search_type in ("all", "cables"):
-                cables = [CableSearchResult(**row) for row in vector_db.search_cables(embedding, limit)]
+                cables = [
+                    CableSearchResult(**row)
+                    for row in vector_db.search_cables(embedding, limit)
+                    if row["score"] >= min_score
+                ]
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"Vector database unavailable: {exc}") from exc
 

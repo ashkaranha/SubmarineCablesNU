@@ -242,6 +242,8 @@ export function IncidentRail() {
     })
   }
 
+  const isSearching = Boolean(searchDraft.trim())
+
   const hasActiveFilters =
     Boolean(query.q.trim()) ||
     query.regions.length > 0 ||
@@ -313,11 +315,23 @@ export function IncidentRail() {
         <input
           type="search"
           value={searchDraft}
-          onChange={(event) => setSearchDraft(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value
+            setSearchDraft(value)
+            if (!value.trim()) {
+              setQuery({
+                regions: [],
+                actorTiers: [],
+                status: null,
+                suspectedCountries: [],
+                cableTypes: [],
+              })
+            }
+          }}
           placeholder="Search or describe an incident…"
           className="mt-3 w-full border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--text)]"
         />
-        {!searchDraft.trim() ? (
+        {!isSearching ? (
           <p className="mt-1 text-[11px] text-[var(--muted)]">
             Matches by meaning, e.g. "anchor dragged near a strait" — not just exact words.
           </p>
@@ -327,103 +341,105 @@ export function IncidentRail() {
           </p>
         ) : null}
 
-        <div className="mt-3 space-y-2">
-          <label className="flex cursor-pointer items-start gap-2 text-xs text-[var(--text)]">
-            <input
-              type="checkbox"
-              checked={hideQuietCables}
-              onChange={() => toggleHideQuietCables()}
-              className="mt-0.5"
-            />
-            <span>
-              Hide cables with no incidents
-              <span className="mt-0.5 block text-[var(--muted)]">Follows current filters</span>
-            </span>
-          </label>
+        {isSearching && (
+          <div className="mt-3 space-y-2">
+            <label className="flex cursor-pointer items-start gap-2 text-xs text-[var(--text)]">
+              <input
+                type="checkbox"
+                checked={hideQuietCables}
+                onChange={() => toggleHideQuietCables()}
+                className="mt-0.5"
+              />
+              <span>
+                Hide cables with no incidents
+                <span className="mt-0.5 block text-[var(--muted)]">Follows current filters</span>
+              </span>
+            </label>
 
-          <div className="flex flex-wrap gap-1.5">
-            <FilterDropdown
-              label="Region"
-              options={meta?.regions ?? []}
-              selectedValues={query.regions}
-              onToggle={toggleRegion}
-              isOpen={openDropdown === 'region'}
-              onOpenChange={openDropdownHandler('region')}
-            />
-            <FilterDropdown
-              label="Nation-state"
-              options={meta?.actor_tiers ?? []}
-              selectedValues={query.actorTiers}
-              onToggle={(value) => toggleActorTier(value as ActorTier)}
-              isOpen={openDropdown === 'actorTier'}
-              onOpenChange={openDropdownHandler('actorTier')}
-              formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
-            />
-            <FilterDropdown
-              label="Status"
-              options={meta?.statuses ?? []}
-              selectedValues={query.status ? [query.status] : []}
-              onToggle={(value) => setStatusFilter(value as StatusFilter)}
-              isOpen={openDropdown === 'status'}
-              onOpenChange={openDropdownHandler('status')}
-              formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
-            />
-            <FilterDropdown
-              label="Suspected country"
-              options={meta?.suspected_countries ?? []}
-              selectedValues={query.suspectedCountries}
-              onToggle={toggleSuspectedCountry}
-              isOpen={openDropdown === 'suspectedCountry'}
-              onOpenChange={openDropdownHandler('suspectedCountry')}
-            />
-            <FilterDropdown
-              label="Cable type"
-              options={meta?.cable_types ?? []}
-              selectedValues={query.cableTypes}
-              onToggle={toggleCableType}
-              isOpen={openDropdown === 'cableType'}
-              onOpenChange={openDropdownHandler('cableType')}
-            />
-          </div>
-
-          {hasActiveFilters && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              {query.regions.map((value) => (
-                <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
-              ))}
-              {query.actorTiers.map((value) => (
-                <FilterPill
-                  key={`tier-${value}`}
-                  label={ACTOR_LABELS[value]}
-                  onRemove={() => toggleActorTier(value)}
-                />
-              ))}
-              {query.status && (
-                <FilterPill
-                  label={STATUS_LABELS[query.status]}
-                  onRemove={() => setStatusFilter(query.status)}
-                />
-              )}
-              {query.suspectedCountries.map((value) => (
-                <FilterPill
-                  key={`country-${value}`}
-                  label={value}
-                  onRemove={() => toggleSuspectedCountry(value)}
-                />
-              ))}
-              {query.cableTypes.map((value) => (
-                <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
-              ))}
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
-              >
-                Clear all
-              </button>
+            <div className="flex flex-wrap gap-1.5">
+              <FilterDropdown
+                label="Region"
+                options={meta?.regions ?? []}
+                selectedValues={query.regions}
+                onToggle={toggleRegion}
+                isOpen={openDropdown === 'region'}
+                onOpenChange={openDropdownHandler('region')}
+              />
+              <FilterDropdown
+                label="Nation-state"
+                options={meta?.actor_tiers ?? []}
+                selectedValues={query.actorTiers}
+                onToggle={(value) => toggleActorTier(value as ActorTier)}
+                isOpen={openDropdown === 'actorTier'}
+                onOpenChange={openDropdownHandler('actorTier')}
+                formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
+              />
+              <FilterDropdown
+                label="Status"
+                options={meta?.statuses ?? []}
+                selectedValues={query.status ? [query.status] : []}
+                onToggle={(value) => setStatusFilter(value as StatusFilter)}
+                isOpen={openDropdown === 'status'}
+                onOpenChange={openDropdownHandler('status')}
+                formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
+              />
+              <FilterDropdown
+                label="Suspected country"
+                options={meta?.suspected_countries ?? []}
+                selectedValues={query.suspectedCountries}
+                onToggle={toggleSuspectedCountry}
+                isOpen={openDropdown === 'suspectedCountry'}
+                onOpenChange={openDropdownHandler('suspectedCountry')}
+              />
+              <FilterDropdown
+                label="Cable type"
+                options={meta?.cable_types ?? []}
+                selectedValues={query.cableTypes}
+                onToggle={toggleCableType}
+                isOpen={openDropdown === 'cableType'}
+                onOpenChange={openDropdownHandler('cableType')}
+              />
             </div>
-          )}
-        </div>
+
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {query.regions.map((value) => (
+                  <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
+                ))}
+                {query.actorTiers.map((value) => (
+                  <FilterPill
+                    key={`tier-${value}`}
+                    label={ACTOR_LABELS[value]}
+                    onRemove={() => toggleActorTier(value)}
+                  />
+                ))}
+                {query.status && (
+                  <FilterPill
+                    label={STATUS_LABELS[query.status]}
+                    onRemove={() => setStatusFilter(query.status)}
+                  />
+                )}
+                {query.suspectedCountries.map((value) => (
+                  <FilterPill
+                    key={`country-${value}`}
+                    label={value}
+                    onRemove={() => toggleSuspectedCountry(value)}
+                  />
+                ))}
+                {query.cableTypes.map((value) => (
+                  <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
+                ))}
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {listMode === 'cables' ? (
