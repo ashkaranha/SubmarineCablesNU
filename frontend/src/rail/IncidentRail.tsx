@@ -42,8 +42,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-// While browsing Cables, only Region and Cable type apply — Nation-state, Status, and
-// Suspected country are incident-level facets that don't map onto a cable filter, and the
+// While browsing Cables, only Region and Cable type apply — , Status, and
+// Suspected Nation State are incident-level facets that don't map onto a cable filter, and the
 // search box searches cable documents instead of incident documents.
 function effectiveIncidentQuery(query: IncidentQuery, listMode: ListMode): IncidentQuery {
   if (listMode === 'cables') {
@@ -207,7 +207,7 @@ export function IncidentRail() {
 
   // Facet counts are dynamic: they reflect the currently active search/filters (each
   // facet computed with every OTHER filter applied but its own selection excluded), so
-  // e.g. picking a Nation-state narrows the Region counts as you go.
+  // e.g. picking a nation state narrows the Region counts as you go.
   useEffect(() => {
     void fetchFilterMeta(effectiveMetaQuery(query, listMode)).then(setMeta).catch(console.error)
   }, [query, listMode])
@@ -449,7 +449,7 @@ export function IncidentRail() {
             />
             {listMode === 'incidents' && (
               <FilterDropdown
-                label="Nation-state"
+                label="Investigation Status"
                 options={meta?.actor_tiers ?? []}
                 selectedValues={query.actorTiers}
                 onToggle={(value) => toggleActorTier(value as ActorTier)}
@@ -471,7 +471,7 @@ export function IncidentRail() {
             )}
             {listMode === 'incidents' && (
               <FilterDropdown
-                label="Suspected country"
+                label="Suspected Nation State"
                 options={meta?.suspected_countries ?? []}
                 selectedValues={query.suspectedCountries}
                 onToggle={toggleSuspectedCountry}
@@ -554,7 +554,7 @@ export function IncidentRail() {
             : `${displayedCables.length} cable${displayedCables.length === 1 ? '' : 's'} found`
           : queryLoading
             ? 'Loading…'
-            : `${resultCount} result${resultCount === 1 ? '' : 's'} found`}
+            : `${resultCount} incident${resultCount === 1 ? '' : 's'} found`}
       </div>
 
       {listMode === 'cables' ? (
