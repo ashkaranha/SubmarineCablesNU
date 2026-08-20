@@ -7,8 +7,8 @@ import type {
   IncidentMarker,
   IncidentQuery,
   IncidentSummary,
+  InvestigationStatus,
   PanelMode,
-  StatusFilter,
 } from '../types/api'
 
 interface FlyTarget {
@@ -42,7 +42,7 @@ interface UiState {
   setQuery: (patch: Partial<IncidentQuery>) => void
   toggleRegion: (region: string) => void
   toggleActorTier: (tier: ActorTier) => void
-  setStatusFilter: (status: StatusFilter | null) => void
+  toggleInvestigationStatus: (status: InvestigationStatus) => void
   toggleSuspectedCountry: (country: string) => void
   toggleCableType: (cableType: string) => void
   setFilteredResults: (incidents: IncidentListItem[], markers: IncidentMarker[]) => void
@@ -64,7 +64,7 @@ const emptyQuery: IncidentQuery = {
   q: '',
   regions: [],
   actorTiers: [],
-  status: null,
+  investigationStatuses: [],
   suspectedCountries: [],
   cableTypes: [],
 }
@@ -135,11 +135,11 @@ export const useUiStore = create<UiState>((set, get) => ({
         actorTiers: toggleInList(get().query.actorTiers, tier),
       },
     }),
-  setStatusFilter: (status) =>
+  toggleInvestigationStatus: (status) =>
     set({
       query: {
         ...get().query,
-        status: get().query.status === status ? null : status,
+        investigationStatuses: toggleInList(get().query.investigationStatuses, status),
       },
     }),
   toggleSuspectedCountry: (country) =>

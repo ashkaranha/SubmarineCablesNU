@@ -21,6 +21,7 @@ from app.models.schemas import (
 from app.services.actor_tier import (
     badge_color_for,
     classify_actor_tier,
+    classify_investigation_status,
     extract_suspected_countries,
     is_resolved_status,
     marker_fill_for,
@@ -145,6 +146,7 @@ class DataStore:
             latitude=incident.latitude,
             longitude=incident.longitude,
             suspected_countries=incident.suspected_countries,
+            investigation_status=incident.investigation_status,
         )
 
     def to_marker(self, incident: IncidentSummary) -> IncidentMarker | None:
@@ -169,14 +171,14 @@ class DataStore:
         q: str | None = None,
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
-        status: str | None = None,
+        investigation_statuses: list[str] | None = None,
         suspected_countries: list[str] | None = None,
         cable_types: list[str] | None = None,
     ) -> list[IncidentSummary]:
         query = (q or "").strip().lower()
         region_set = {value.strip() for value in (regions or []) if value.strip()}
         tier_set = {value.strip() for value in (actor_tiers or []) if value.strip()}
-        status_filter = (status or "").strip().lower() or None
+        investigation_status_set = {value.strip() for value in (investigation_statuses or []) if value.strip()}
         country_set = {value.strip() for value in (suspected_countries or []) if value.strip()}
         type_set = {value.strip() for value in (cable_types or []) if value.strip()}
 
@@ -186,9 +188,7 @@ class DataStore:
                 continue
             if tier_set and incident.actor_tier not in tier_set:
                 continue
-            if status_filter == "resolved" and not is_resolved_status(incident.status):
-                continue
-            if status_filter == "unresolved" and is_resolved_status(incident.status):
+            if investigation_status_set and incident.investigation_status not in investigation_status_set:
                 continue
             if country_set and not country_set.intersection(incident.suspected_countries):
                 continue
@@ -205,7 +205,7 @@ class DataStore:
         q: str | None = None,
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
-        status: str | None = None,
+        investigation_statuses: list[str] | None = None,
         suspected_countries: list[str] | None = None,
         cable_types: list[str] | None = None,
     ) -> list[IncidentMarker]:
@@ -213,7 +213,7 @@ class DataStore:
             q=q,
             regions=regions,
             actor_tiers=actor_tiers,
-            status=status,
+            investigation_statuses=investigation_statuses,
             suspected_countries=suspected_countries,
             cable_types=cable_types,
         )
@@ -230,7 +230,7 @@ class DataStore:
         q: str | None = None,
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
-        status: str | None = None,
+        investigation_statuses: list[str] | None = None,
         suspected_countries: list[str] | None = None,
         cable_types: list[str] | None = None,
     ) -> FilterMeta:
@@ -242,7 +242,7 @@ class DataStore:
             "q": q,
             "regions": regions,
             "actor_tiers": actor_tiers,
-            "status": status,
+            "investigation_statuses": investigation_statuses,
             "suspected_countries": suspected_countries,
             "cable_types": cable_types,
         }
@@ -254,14 +254,13 @@ class DataStore:
 
         region_counts = _tally(pool("regions"), lambda incident: [incident.region])
         tier_counts = _tally(pool("actor_tiers"), lambda incident: [incident.actor_tier])
+        investigation_status_counts = _tally(
+            pool("investigation_statuses"), lambda incident: [incident.investigation_status]
+        )
         country_counts = _tally(pool("suspected_countries"), lambda incident: incident.suspected_countries)
         type_counts = _tally(
             pool("cable_types"), lambda incident: [incident.type] if incident.type else []
         )
-
-        status_pool = pool("status")
-        resolved = sum(1 for incident in status_pool if is_resolved_status(incident.status))
-        unresolved = len(status_pool) - resolved
 
         regions_out = [
             FilterCount(value=name, count=count)
@@ -271,9 +270,9 @@ class DataStore:
             FilterCount(value=name, count=tier_counts.get(name, 0))
             for name in ("confirmed", "suspected", "none")
         ]
-        statuses_out = [
-            FilterCount(value="resolved", count=resolved),
-            FilterCount(value="unresolved", count=unresolved),
+        investigation_statuses_out = [
+            FilterCount(value=name, count=investigation_status_counts.get(name, 0))
+            for name in ("ongoing", "resolved", "reported")
         ]
         suspected_countries_out = [
             FilterCount(value=name, count=count)
@@ -287,7 +286,7 @@ class DataStore:
         return FilterMeta(
             regions=regions_out,
             actor_tiers=actor_tiers_out,
-            statuses=statuses_out,
+            investigation_statuses=investigation_statuses_out,
             suspected_countries=suspected_countries_out,
             cable_types=cable_types_out,
             total=total,
@@ -445,6 +444,7 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         status = (row.get("Status") or "").strip() or None
         actor_tier = classify_actor_tier(nation_state)
         suspected_countries = extract_suspected_countries(nation_state)
+        investigation_status = classify_investigation_status(status)
         marker_fill = marker_fill_for(actor_tier)
         stroke = status_stroke_for(status)
         badge_color = badge_color_for(actor_tier, status)
@@ -492,6 +492,7 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
             longitude=longitude,
             coordinate_source=coordinate_source,  # type: ignore[arg-type]
             suspected_countries=suspected_countries,
+            investigation_status=investigation_status,
         )
         raw_incidents.append(incident)
 

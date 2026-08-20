@@ -41,8 +41,8 @@ function buildQueryString(query?: Partial<IncidentQuery>): string {
   for (const tier of query.actorTiers ?? []) {
     params.append('actor_tier', tier)
   }
-  if (query.status) {
-    params.set('status', query.status)
+  for (const investigationStatus of query.investigationStatuses ?? []) {
+    params.append('investigation_status', investigationStatus)
   }
   for (const country of query.suspectedCountries ?? []) {
     params.append('suspected_country', country)

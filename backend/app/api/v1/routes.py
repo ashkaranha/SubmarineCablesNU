@@ -54,7 +54,7 @@ def create_router(store: DataStore) -> APIRouter:
         q: str | None = Query(default=None),
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
-        status: str | None = Query(default=None),
+        investigation_status: list[str] | None = Query(default=None),
         suspected_country: list[str] | None = Query(default=None),
         cable_type: list[str] | None = Query(default=None),
     ) -> FilterMeta:
@@ -62,7 +62,7 @@ def create_router(store: DataStore) -> APIRouter:
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
-            status=status,
+            investigation_statuses=_split_csv_param(investigation_status),
             suspected_countries=_split_csv_param(suspected_country),
             cable_types=_split_csv_param(cable_type),
         )
@@ -83,7 +83,7 @@ def create_router(store: DataStore) -> APIRouter:
         q: str | None = Query(default=None),
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
-        status: str | None = Query(default=None),
+        investigation_status: list[str] | None = Query(default=None),
         suspected_country: list[str] | None = Query(default=None),
         cable_type: list[str] | None = Query(default=None),
     ) -> list[IncidentListItem]:
@@ -91,7 +91,7 @@ def create_router(store: DataStore) -> APIRouter:
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
-            status=status,
+            investigation_statuses=_split_csv_param(investigation_status),
             suspected_countries=_split_csv_param(suspected_country),
             cable_types=_split_csv_param(cable_type),
         )
@@ -109,7 +109,7 @@ def create_router(store: DataStore) -> APIRouter:
         q: str | None = Query(default=None),
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
-        status: str | None = Query(default=None),
+        investigation_status: list[str] | None = Query(default=None),
         suspected_country: list[str] | None = Query(default=None),
         cable_type: list[str] | None = Query(default=None),
     ) -> list[IncidentMarker]:
@@ -117,7 +117,7 @@ def create_router(store: DataStore) -> APIRouter:
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
-            status=status,
+            investigation_statuses=_split_csv_param(investigation_status),
             suspected_countries=_split_csv_param(suspected_country),
             cable_types=_split_csv_param(cable_type),
         )

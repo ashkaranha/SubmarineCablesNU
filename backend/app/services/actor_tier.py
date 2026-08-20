@@ -4,6 +4,9 @@ ActorTier = Literal["confirmed", "suspected", "none"]
 MarkerFill = Literal["red", "amber", "slate"]
 StatusStroke = Literal["resolved", "unresolved"]
 BadgeColor = Literal["red", "yellow", "green"]
+InvestigationStatus = Literal["ongoing", "resolved", "reported"]
+
+RESOLVED_PREFIXES = ("resolved", "closed", "concluded")
 
 NONE_PATTERNS = (
     "unknown",
@@ -99,6 +102,25 @@ def extract_suspected_countries(nation_state_suspected: str | None) -> list[str]
 
 def is_resolved_status(status: str | None) -> bool:
     return _normalize(status).lower().startswith("resolved")
+
+
+def classify_investigation_status(status: str | None) -> InvestigationStatus:
+    lowered = _normalize(status).lower()
+    if not lowered:
+        return "reported"
+
+    if lowered.startswith(RESOLVED_PREFIXES):
+        return "resolved"
+
+    if "ongoing" in lowered or "underway" in lowered:
+        return "ongoing"
+
+    # e.g. "International cable resolved 22 Feb 2022; domestic cable resolved July 2023",
+    # where "resolved" describes the outcome but isn't the first word.
+    if "resolved" in lowered:
+        return "resolved"
+
+    return "reported"
 
 
 def marker_fill_for(actor_tier: ActorTier) -> MarkerFill:

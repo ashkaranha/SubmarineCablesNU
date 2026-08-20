@@ -13,8 +13,8 @@ export function Header() {
   if (query.actorTiers.length) {
     filterBits.push(query.actorTiers.join('/'))
   }
-  if (query.status) {
-    filterBits.push(query.status)
+  if (query.investigationStatuses.length) {
+    filterBits.push(query.investigationStatuses.join('/'))
   }
   if (query.q.trim()) {
     filterBits.push(`“${query.q.trim()}”`)

@@ -17,11 +17,12 @@ import type {
   IncidentListItem,
   IncidentMarker,
   IncidentQuery,
-  StatusFilter,
+  InvestigationStatus,
 } from '../types/api'
 
 type ListMode = 'incidents' | 'cables'
-type DropdownKey = 'region' | 'actorTier' | 'status' | 'suspectedCountry' | 'cableType'
+type DropdownKey = 'region' | 'actorTier' | 'investigationStatus' | 'suspectedCountry' | 'cableType'
+type DateSort = 'none' | 'newest' | 'oldest'
 
 const SEMANTIC_CANDIDATE_LIMIT = 50
 const SEMANTIC_SEARCH_TIMEOUT_MS = 8000
@@ -42,16 +43,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-// While browsing Cables, only Region and Cable type apply — , Status, and
-// Suspected Nation State are incident-level facets that don't map onto a cable filter, and the
-// search box searches cable documents instead of incident documents.
+// While browsing Cables, only Region and Cable type apply — Nation-state, Investigation
+// status, and Suspected Nation State are incident-level facets that don't map onto a cable
+// filter, and the search box searches cable documents instead of incident documents.
 function effectiveIncidentQuery(query: IncidentQuery, listMode: ListMode): IncidentQuery {
   if (listMode === 'cables') {
     return {
       q: '',
       regions: query.regions,
       actorTiers: [],
-      status: null,
+      investigationStatuses: [],
       suspectedCountries: [],
       cableTypes: query.cableTypes,
     }
@@ -69,12 +70,43 @@ function effectiveMetaQuery(query: IncidentQuery, listMode: ListMode): IncidentQ
       q: query.q,
       regions: query.regions,
       actorTiers: [],
-      status: null,
+      investigationStatuses: [],
       suspectedCountries: [],
       cableTypes: query.cableTypes,
     }
   }
   return query
+}
+
+// Mirrors the backend's date parsing (%m/%d/%Y, %Y-%m-%d, %m/%d/%y); unparseable dates sort
+// as oldest, matching the backend's datetime.min fallback.
+function parseIncidentDate(value: string): number {
+  const text = (value || '').trim()
+
+  const mdy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy) {
+    return new Date(Number(mdy[3]), Number(mdy[1]) - 1, Number(mdy[2])).getTime()
+  }
+
+  const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (iso) {
+    return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])).getTime()
+  }
+
+  const mdyShort = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+  if (mdyShort) {
+    return new Date(2000 + Number(mdyShort[3]), Number(mdyShort[1]) - 1, Number(mdyShort[2])).getTime()
+  }
+
+  return Number.NEGATIVE_INFINITY
+}
+
+function sortIncidentsByDate(incidents: IncidentListItem[], sort: DateSort): IncidentListItem[] {
+  if (sort === 'none') {
+    return incidents
+  }
+  const direction = sort === 'newest' ? -1 : 1
+  return [...incidents].sort((a, b) => direction * (parseIncidentDate(a.date) - parseIncidentDate(b.date)))
 }
 
 const ACTOR_LABELS: Record<ActorTier, string> = {
@@ -83,9 +115,10 @@ const ACTOR_LABELS: Record<ActorTier, string> = {
   none: 'None',
 }
 
-const STATUS_LABELS: Record<StatusFilter, string> = {
+const INVESTIGATION_STATUS_LABELS: Record<InvestigationStatus, string> = {
+  ongoing: 'Ongoing',
   resolved: 'Resolved',
-  unresolved: 'Unresolved',
+  reported: 'Reported',
 }
 
 function scorePercent(score: number): number {
@@ -181,7 +214,7 @@ export function IncidentRail() {
   const setQuery = useUiStore((state) => state.setQuery)
   const toggleRegion = useUiStore((state) => state.toggleRegion)
   const toggleActorTier = useUiStore((state) => state.toggleActorTier)
-  const setStatusFilter = useUiStore((state) => state.setStatusFilter)
+  const toggleInvestigationStatus = useUiStore((state) => state.toggleInvestigationStatus)
   const toggleSuspectedCountry = useUiStore((state) => state.toggleSuspectedCountry)
   const toggleCableType = useUiStore((state) => state.toggleCableType)
   const setFilteredResults = useUiStore((state) => state.setFilteredResults)
@@ -204,6 +237,7 @@ export function IncidentRail() {
   const [cableScores, setCableScores] = useState<Map<string, number> | null>(null)
   const [cableSemanticUnavailable, setCableSemanticUnavailable] = useState(false)
   const [searchedCableNames, setSearchedCableNames] = useState<string[] | null>(null)
+  const [dateSort, setDateSort] = useState<DateSort>('none')
 
   // Facet counts are dynamic: they reflect the currently active search/filters (each
   // facet computed with every OTHER filter applied but its own selection excluded), so
@@ -308,7 +342,7 @@ export function IncidentRail() {
       q: '',
       regions: [],
       actorTiers: [],
-      status: null,
+      investigationStatuses: [],
       suspectedCountries: [],
       cableTypes: [],
     })
@@ -325,7 +359,7 @@ export function IncidentRail() {
     Boolean(query.q.trim()) ||
     query.regions.length > 0 ||
     query.actorTiers.length > 0 ||
-    query.status != null ||
+    query.investigationStatuses.length > 0 ||
     query.suspectedCountries.length > 0 ||
     query.cableTypes.length > 0
 
@@ -357,6 +391,8 @@ export function IncidentRail() {
 
   const openDropdownHandler = (key: DropdownKey) => (open: boolean) =>
     setOpenDropdown(open ? key : null)
+
+  const sortedIncidents = sortIncidentsByDate(filteredIncidents, dateSort)
 
   return (
     <aside className="pointer-events-auto absolute bottom-0 left-0 top-0 z-20 flex w-[340px] flex-col border-r border-[var(--border)] bg-[var(--surface)]">
@@ -449,7 +485,7 @@ export function IncidentRail() {
             />
             {listMode === 'incidents' && (
               <FilterDropdown
-                label="Investigation Status"
+                label="Nation-state"
                 options={meta?.actor_tiers ?? []}
                 selectedValues={query.actorTiers}
                 onToggle={(value) => toggleActorTier(value as ActorTier)}
@@ -460,13 +496,13 @@ export function IncidentRail() {
             )}
             {listMode === 'incidents' && (
               <FilterDropdown
-                label="Status"
-                options={meta?.statuses ?? []}
-                selectedValues={query.status ? [query.status] : []}
-                onToggle={(value) => setStatusFilter(value as StatusFilter)}
-                isOpen={openDropdown === 'status'}
-                onOpenChange={openDropdownHandler('status')}
-                formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
+                label="Investigation status"
+                options={meta?.investigation_statuses ?? []}
+                selectedValues={query.investigationStatuses}
+                onToggle={(value) => toggleInvestigationStatus(value as InvestigationStatus)}
+                isOpen={openDropdown === 'investigationStatus'}
+                onOpenChange={openDropdownHandler('investigationStatus')}
+                formatLabel={(value) => INVESTIGATION_STATUS_LABELS[value as InvestigationStatus] ?? value}
               />
             )}
             {listMode === 'incidents' && (
@@ -501,12 +537,13 @@ export function IncidentRail() {
                   onRemove={() => toggleActorTier(value)}
                 />
               ))}
-              {query.status && (
+              {query.investigationStatuses.map((value) => (
                 <FilterPill
-                  label={STATUS_LABELS[query.status]}
-                  onRemove={() => setStatusFilter(query.status)}
+                  key={`investigation-status-${value}`}
+                  label={INVESTIGATION_STATUS_LABELS[value]}
+                  onRemove={() => toggleInvestigationStatus(value)}
                 />
-              )}
+              ))}
               {query.suspectedCountries.map((value) => (
                 <FilterPill
                   key={`country-${value}`}
@@ -547,14 +584,42 @@ export function IncidentRail() {
         </div>
       </div>
 
-      <div className="border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-xs font-medium text-[var(--muted)]">
-        {listMode === 'cables'
-          ? cablesLoading
-            ? 'Loading…'
-            : `${displayedCables.length} cable${displayedCables.length === 1 ? '' : 's'} found`
-          : queryLoading
-            ? 'Loading…'
-            : `${resultCount} incident${resultCount === 1 ? '' : 's'} found`}
+      <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-xs font-medium text-[var(--muted)]">
+        <span>
+          {listMode === 'cables'
+            ? cablesLoading
+              ? 'Loading…'
+              : `${displayedCables.length} cable${displayedCables.length === 1 ? '' : 's'} found`
+            : queryLoading
+              ? 'Loading…'
+              : `${resultCount} incident${resultCount === 1 ? '' : 's'} found`}
+        </span>
+        {listMode === 'incidents' && (
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setDateSort(dateSort === 'newest' ? 'none' : 'newest')}
+              className={`border px-2 py-1 text-[11px] ${
+                dateSort === 'newest'
+                  ? 'border-[var(--text)] bg-[var(--text)] text-[var(--surface)]'
+                  : 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--text)] hover:text-[var(--text)]'
+              }`}
+            >
+              Newest first
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateSort(dateSort === 'oldest' ? 'none' : 'oldest')}
+              className={`border px-2 py-1 text-[11px] ${
+                dateSort === 'oldest'
+                  ? 'border-[var(--text)] bg-[var(--text)] text-[var(--surface)]'
+                  : 'border-[var(--border)] text-[var(--muted)] hover:border-[var(--text)] hover:text-[var(--text)]'
+              }`}
+            >
+              Oldest first
+            </button>
+          </div>
+        )}
       </div>
 
       {listMode === 'cables' ? (
@@ -605,13 +670,13 @@ export function IncidentRail() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {filteredIncidents.length === 0 && !queryLoading ? (
+          {sortedIncidents.length === 0 && !queryLoading ? (
             <p className="px-4 py-8 text-sm text-[var(--muted)]">
               No incidents match these filters.
             </p>
           ) : (
             <ul className="divide-y divide-[var(--border)]">
-              {filteredIncidents.map((incident) => {
+              {sortedIncidents.map((incident) => {
                 const selected = selectedIncidentId === incident.id
                 const score = semanticScores?.get(incident.id)
                 return (
