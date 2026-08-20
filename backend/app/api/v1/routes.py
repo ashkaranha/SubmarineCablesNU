@@ -17,6 +17,7 @@ from app.models.schemas import (
 from app.services import vector_db
 from app.services.data_loader import DataStore
 from app.services.embeddings import embed_text
+from app.services.search_intent import classify_query
 from app.services.source_finder import find_additional_sources
 
 router = APIRouter(prefix="/api/v1")
@@ -159,6 +160,10 @@ def create_router(store: DataStore) -> APIRouter:
         limit: int = Query(default=10, ge=1, le=50),
         min_score: float = Query(default=MIN_SEMANTIC_SCORE, ge=0, le=1),
     ) -> SearchResponse:
+        aggregate = classify_query(store, q, limit=limit)
+        if aggregate is not None:
+            return SearchResponse(query=q, aggregate=aggregate)
+
         try:
             embedding = embed_text(q)
         except Exception as exc:

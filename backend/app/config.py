@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     google_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
-    google_model_name: str = "gemini-2.5-flash"
+    google_model_name: str = "gemini-3.6-flash"
 
 
 settings = Settings()

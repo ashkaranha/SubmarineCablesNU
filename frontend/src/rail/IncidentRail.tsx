@@ -12,6 +12,7 @@ import { FilterDropdown } from './FilterDropdown'
 import { useUiStore } from '../store/uiStore'
 import type {
   ActorTier,
+  AggregateResult,
   CableSummary,
   FilterMeta,
   IncidentListItem,
@@ -158,6 +159,7 @@ interface IncidentQueryResult {
   markers: IncidentMarker[]
   scores: Map<string, number> | null
   semanticUnavailable: boolean
+  aggregate: AggregateResult | null
 }
 
 async function runIncidentQuery(query: IncidentQuery): Promise<IncidentQueryResult> {
@@ -166,7 +168,7 @@ async function runIncidentQuery(query: IncidentQuery): Promise<IncidentQueryResu
   if (!trimmed) {
     const incidents = await fetchIncidents(query)
     const markers = await fetchMarkers(query, incidents)
-    return { incidents, markers, scores: null, semanticUnavailable: false }
+    return { incidents, markers, scores: null, semanticUnavailable: false, aggregate: null }
   }
 
   const facetQuery = { ...query, q: '' }
@@ -180,6 +182,16 @@ async function runIncidentQuery(query: IncidentQuery): Promise<IncidentQueryResu
       fetchIncidents(facetQuery),
       fetchMarkers(facetQuery),
     ])
+
+    if (semantic.aggregate) {
+      return {
+        incidents: [],
+        markers: [],
+        scores: null,
+        semanticUnavailable: false,
+        aggregate: semantic.aggregate,
+      }
+    }
 
     const facetById = new Map(facetIncidents.map((incident) => [incident.id, incident]))
     const scores = new Map<string, number>()
@@ -196,12 +208,12 @@ async function runIncidentQuery(query: IncidentQuery): Promise<IncidentQueryResu
     const keepIds = new Set(incidents.map((incident) => incident.id))
     const markers = facetMarkers.filter((marker) => keepIds.has(marker.id))
 
-    return { incidents, markers, scores, semanticUnavailable: false }
+    return { incidents, markers, scores, semanticUnavailable: false, aggregate: null }
   } catch (error) {
     console.error('Semantic search unavailable, falling back to keyword search', error)
     const incidents = await fetchIncidents(query)
     const markers = await fetchMarkers(query, incidents)
-    return { incidents, markers, scores: null, semanticUnavailable: true }
+    return { incidents, markers, scores: null, semanticUnavailable: true, aggregate: null }
   }
 }
 
@@ -238,6 +250,7 @@ export function IncidentRail() {
   const [cableSemanticUnavailable, setCableSemanticUnavailable] = useState(false)
   const [searchedCableNames, setSearchedCableNames] = useState<string[] | null>(null)
   const [dateSort, setDateSort] = useState<DateSort>('none')
+  const [aggregate, setAggregate] = useState<AggregateResult | null>(null)
 
   // Facet counts are dynamic: they reflect the currently active search/filters (each
   // facet computed with every OTHER filter applied but its own selection excluded), so
@@ -270,12 +283,13 @@ export function IncidentRail() {
     let cancelled = false
     setQueryLoading(true)
     void runIncidentQuery(effectiveIncidentQuery(query, listMode))
-      .then(({ incidents, markers, scores, semanticUnavailable: unavailable }) => {
+      .then(({ incidents, markers, scores, semanticUnavailable: unavailable, aggregate: newAggregate }) => {
         if (cancelled) {
           return
         }
         setSemanticScores(scores)
         setSemanticUnavailable(unavailable)
+        setAggregate(newAggregate)
         setFilteredResults(incidents, markers)
       })
       .catch((error) => {
@@ -335,6 +349,8 @@ export function IncidentRail() {
     const detail = await fetchCable(name)
     openCablePanel(name, detail)
   }
+
+  const isCableAggregate = aggregate?.title.toLowerCase().includes('cable') ?? false
 
   const clearIncidentFilters = () => {
     setSearchDraft('')
@@ -670,11 +686,49 @@ export function IncidentRail() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {sortedIncidents.length === 0 && !queryLoading ? (
+          {aggregate && aggregate.items.length > 0 && (
+            <div>
+              <p className="px-4 pt-3 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]">
+                {aggregate.title}
+              </p>
+              <ol className="divide-y divide-[var(--border)]">
+                {aggregate.items.map((item, index) => {
+                  const row = (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm leading-snug">
+                        <span className="mr-2 text-[var(--muted)]">{index + 1}.</span>
+                        {item.label}
+                      </span>
+                      <span className="shrink-0 text-xs text-[var(--muted)]">
+                        {item.count} {item.count === 1 ? 'incident' : 'incidents'}
+                      </span>
+                    </div>
+                  )
+                  return (
+                    <li key={`${item.label}-${index}`}>
+                      {isCableAggregate ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleSelectCable(item.label)}
+                          className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--bg)]"
+                        >
+                          {row}
+                        </button>
+                      ) : (
+                        <div className="px-4 py-3">{row}</div>
+                      )}
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+          )}
+
+          {sortedIncidents.length === 0 && !queryLoading && !aggregate ? (
             <p className="px-4 py-8 text-sm text-[var(--muted)]">
               No incidents match these filters.
             </p>
-          ) : (
+          ) : aggregate ? null : (
             <ul className="divide-y divide-[var(--border)]">
               {sortedIncidents.map((incident) => {
                 const selected = selectedIncidentId === incident.id
