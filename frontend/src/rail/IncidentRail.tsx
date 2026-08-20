@@ -43,7 +43,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-// While browsing Cables, only Region and Cable type apply — Nation-state, Investigation
+// While browsing Cables, only Region and Cable type apply — Investigation
 // status, and Suspected Nation State are incident-level facets that don't map onto a cable
 // filter, and the search box searches cable documents instead of incident documents.
 function effectiveIncidentQuery(query: IncidentQuery, listMode: ListMode): IncidentQuery {
@@ -483,7 +483,7 @@ export function IncidentRail() {
               isOpen={openDropdown === 'region'}
               onOpenChange={openDropdownHandler('region')}
             />
-            {listMode === 'incidents' && (
+            {/* {listMode === 'incidents' && (
               <FilterDropdown
                 label="Nation-state"
                 options={meta?.actor_tiers ?? []}
@@ -493,10 +493,10 @@ export function IncidentRail() {
                 onOpenChange={openDropdownHandler('actorTier')}
                 formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
               />
-            )}
+            )} */}
             {listMode === 'incidents' && (
               <FilterDropdown
-                label="Investigation status"
+                label="Investigation Status"
                 options={meta?.investigation_statuses ?? []}
                 selectedValues={query.investigationStatuses}
                 onToggle={(value) => toggleInvestigationStatus(value as InvestigationStatus)}
