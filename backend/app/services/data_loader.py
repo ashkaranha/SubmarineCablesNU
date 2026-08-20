@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 from app.config import settings
@@ -224,53 +224,82 @@ class DataStore:
                 markers.append(marker)
         return markers
 
-    def filter_meta(self) -> FilterMeta:
-        region_counts: dict[str, int] = {}
-        tier_counts: dict[str, int] = {"confirmed": 0, "suspected": 0, "none": 0}
-        country_counts: dict[str, int] = {}
-        type_counts: dict[str, int] = {}
-        resolved = 0
-        unresolved = 0
-        for incident in self.incidents:
-            region_counts[incident.region] = region_counts.get(incident.region, 0) + 1
-            tier_counts[incident.actor_tier] = tier_counts.get(incident.actor_tier, 0) + 1
-            if is_resolved_status(incident.status):
-                resolved += 1
-            else:
-                unresolved += 1
-            for country in incident.suspected_countries:
-                country_counts[country] = country_counts.get(country, 0) + 1
-            if incident.type:
-                type_counts[incident.type] = type_counts.get(incident.type, 0) + 1
+    def filter_meta(
+        self,
+        *,
+        q: str | None = None,
+        regions: list[str] | None = None,
+        actor_tiers: list[str] | None = None,
+        status: str | None = None,
+        suspected_countries: list[str] | None = None,
+        cable_types: list[str] | None = None,
+    ) -> FilterMeta:
+        # Each facet's counts are computed with every OTHER active filter applied but that
+        # facet's own selection excluded ("self-exclusion"), so e.g. picking "Confirmed" under
+        # Nation-state narrows the Region counts, while the Nation-state options themselves
+        # still show what each choice would yield instead of collapsing to only what's picked.
+        base = {
+            "q": q,
+            "regions": regions,
+            "actor_tiers": actor_tiers,
+            "status": status,
+            "suspected_countries": suspected_countries,
+            "cable_types": cable_types,
+        }
 
-        regions = [
+        def pool(exclude: str) -> list[IncidentSummary]:
+            kwargs = dict(base)
+            kwargs[exclude] = None
+            return self.filter_incidents(**kwargs)  # type: ignore[arg-type]
+
+        region_counts = _tally(pool("regions"), lambda incident: [incident.region])
+        tier_counts = _tally(pool("actor_tiers"), lambda incident: [incident.actor_tier])
+        country_counts = _tally(pool("suspected_countries"), lambda incident: incident.suspected_countries)
+        type_counts = _tally(
+            pool("cable_types"), lambda incident: [incident.type] if incident.type else []
+        )
+
+        status_pool = pool("status")
+        resolved = sum(1 for incident in status_pool if is_resolved_status(incident.status))
+        unresolved = len(status_pool) - resolved
+
+        regions_out = [
             FilterCount(value=name, count=count)
             for name, count in sorted(region_counts.items(), key=lambda item: (-item[1], item[0]))
         ]
-        actor_tiers = [
+        actor_tiers_out = [
             FilterCount(value=name, count=tier_counts.get(name, 0))
             for name in ("confirmed", "suspected", "none")
         ]
-        statuses = [
+        statuses_out = [
             FilterCount(value="resolved", count=resolved),
             FilterCount(value="unresolved", count=unresolved),
         ]
-        suspected_countries = [
+        suspected_countries_out = [
             FilterCount(value=name, count=count)
             for name, count in sorted(country_counts.items(), key=lambda item: (-item[1], item[0]))
         ]
-        cable_types = [
+        cable_types_out = [
             FilterCount(value=name, count=count)
             for name, count in sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))
         ]
+        total = len(self.filter_incidents(**base))  # type: ignore[arg-type]
         return FilterMeta(
-            regions=regions,
-            actor_tiers=actor_tiers,
-            statuses=statuses,
-            suspected_countries=suspected_countries,
-            cable_types=cable_types,
-            total=len(self.incidents),
+            regions=regions_out,
+            actor_tiers=actor_tiers_out,
+            statuses=statuses_out,
+            suspected_countries=suspected_countries_out,
+            cable_types=cable_types_out,
+            total=total,
         )
+
+
+def _tally(incidents: list[IncidentSummary], key_fn: Callable[[IncidentSummary], list[str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for incident in incidents:
+        for key in key_fn(incident):
+            counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _incident_matches_query(incident: IncidentSummary, query: str) -> bool:

@@ -83,8 +83,8 @@ export function fetchIncidents(query?: Partial<IncidentQuery>): Promise<Incident
   return getJson<IncidentListItem[]>(`/incidents${buildQueryString(query)}`)
 }
 
-export function fetchFilterMeta(): Promise<FilterMeta> {
-  return getJson<FilterMeta>('/meta/filters')
+export function fetchFilterMeta(query?: Partial<IncidentQuery>): Promise<FilterMeta> {
+  return getJson<FilterMeta>(`/meta/filters${buildQueryString(query)}`)
 }
 
 export function fetchIncidentSources(id: string): Promise<IncidentSourcesResponse> {

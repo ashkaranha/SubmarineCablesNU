@@ -50,8 +50,22 @@ def create_router(store: DataStore) -> APIRouter:
         )
 
     @router.get("/meta/filters", response_model=FilterMeta)
-    def meta_filters() -> FilterMeta:
-        return store.filter_meta()
+    def meta_filters(
+        q: str | None = Query(default=None),
+        region: list[str] | None = Query(default=None),
+        actor_tier: list[str] | None = Query(default=None),
+        status: str | None = Query(default=None),
+        suspected_country: list[str] | None = Query(default=None),
+        cable_type: list[str] | None = Query(default=None),
+    ) -> FilterMeta:
+        return store.filter_meta(
+            q=q,
+            regions=_split_csv_param(region),
+            actor_tiers=_split_csv_param(actor_tier),
+            status=status,
+            suspected_countries=_split_csv_param(suspected_country),
+            cable_types=_split_csv_param(cable_type),
+        )
 
     @router.get("/cables", response_model=list[CableSummary])
     def list_cables() -> list[CableSummary]:

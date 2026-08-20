@@ -187,9 +187,12 @@ export function IncidentRail() {
   const [cableSemanticUnavailable, setCableSemanticUnavailable] = useState(false)
   const [searchedCableNames, setSearchedCableNames] = useState<string[] | null>(null)
 
+  // Facet counts are dynamic: they reflect the currently active search/filters (each
+  // facet computed with every OTHER filter applied but its own selection excluded), so
+  // e.g. picking a Nation-state narrows the Region counts as you go.
   useEffect(() => {
-    void fetchFilterMeta().then(setMeta).catch(console.error)
-  }, [])
+    void fetchFilterMeta(effectiveIncidentQuery(query, listMode)).then(setMeta).catch(console.error)
+  }, [query, listMode])
 
   useEffect(() => {
     if (listMode !== 'cables' || allCables.length > 0) {
@@ -390,19 +393,7 @@ export function IncidentRail() {
         <input
           type="search"
           value={searchDraft}
-          onChange={(event) => {
-            const value = event.target.value
-            setSearchDraft(value)
-            if (!value.trim()) {
-              setQuery({
-                regions: [],
-                actorTiers: [],
-                status: null,
-                suspectedCountries: [],
-                cableTypes: [],
-              })
-            }
-          }}
+          onChange={(event) => setSearchDraft(event.target.value)}
           placeholder={listMode === 'cables' ? 'Search or describe a cable…' : 'Search or describe an incident…'}
           className="mt-3 w-full border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--text)]"
         />
@@ -422,7 +413,7 @@ export function IncidentRail() {
           </p>
         ) : null}
 
-        {isSearching && listMode === 'cables' && (
+        {listMode === 'cables' && (
           <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs text-[var(--text)]">
             <input
               type="checkbox"
@@ -437,116 +428,114 @@ export function IncidentRail() {
           </label>
         )}
 
-        {isSearching && (
-          <div className="mt-3 space-y-2">
-            <div className="flex flex-wrap gap-1.5">
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            <FilterDropdown
+              label="Region"
+              options={meta?.regions ?? []}
+              selectedValues={query.regions}
+              onToggle={toggleRegion}
+              isOpen={openDropdown === 'region'}
+              onOpenChange={openDropdownHandler('region')}
+            />
+            {listMode === 'incidents' && (
               <FilterDropdown
-                label="Region"
-                options={meta?.regions ?? []}
-                selectedValues={query.regions}
-                onToggle={toggleRegion}
-                isOpen={openDropdown === 'region'}
-                onOpenChange={openDropdownHandler('region')}
+                label="Nation-state"
+                options={meta?.actor_tiers ?? []}
+                selectedValues={query.actorTiers}
+                onToggle={(value) => toggleActorTier(value as ActorTier)}
+                isOpen={openDropdown === 'actorTier'}
+                onOpenChange={openDropdownHandler('actorTier')}
+                formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
               />
-              {listMode === 'incidents' && (
-                <FilterDropdown
-                  label="Nation-state"
-                  options={meta?.actor_tiers ?? []}
-                  selectedValues={query.actorTiers}
-                  onToggle={(value) => toggleActorTier(value as ActorTier)}
-                  isOpen={openDropdown === 'actorTier'}
-                  onOpenChange={openDropdownHandler('actorTier')}
-                  formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
-                />
-              )}
-              {listMode === 'incidents' && (
-                <FilterDropdown
-                  label="Status"
-                  options={meta?.statuses ?? []}
-                  selectedValues={query.status ? [query.status] : []}
-                  onToggle={(value) => setStatusFilter(value as StatusFilter)}
-                  isOpen={openDropdown === 'status'}
-                  onOpenChange={openDropdownHandler('status')}
-                  formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
-                />
-              )}
-              {listMode === 'incidents' && (
-                <FilterDropdown
-                  label="Suspected country"
-                  options={meta?.suspected_countries ?? []}
-                  selectedValues={query.suspectedCountries}
-                  onToggle={toggleSuspectedCountry}
-                  isOpen={openDropdown === 'suspectedCountry'}
-                  onOpenChange={openDropdownHandler('suspectedCountry')}
-                />
-              )}
+            )}
+            {listMode === 'incidents' && (
               <FilterDropdown
-                label="Cable type"
-                options={meta?.cable_types ?? []}
-                selectedValues={query.cableTypes}
-                onToggle={toggleCableType}
-                isOpen={openDropdown === 'cableType'}
-                onOpenChange={openDropdownHandler('cableType')}
+                label="Status"
+                options={meta?.statuses ?? []}
+                selectedValues={query.status ? [query.status] : []}
+                onToggle={(value) => setStatusFilter(value as StatusFilter)}
+                isOpen={openDropdown === 'status'}
+                onOpenChange={openDropdownHandler('status')}
+                formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
               />
-            </div>
-
-            {listMode === 'incidents' && hasActiveIncidentFilters && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                {query.regions.map((value) => (
-                  <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
-                ))}
-                {query.actorTiers.map((value) => (
-                  <FilterPill
-                    key={`tier-${value}`}
-                    label={ACTOR_LABELS[value]}
-                    onRemove={() => toggleActorTier(value)}
-                  />
-                ))}
-                {query.status && (
-                  <FilterPill
-                    label={STATUS_LABELS[query.status]}
-                    onRemove={() => setStatusFilter(query.status)}
-                  />
-                )}
-                {query.suspectedCountries.map((value) => (
-                  <FilterPill
-                    key={`country-${value}`}
-                    label={value}
-                    onRemove={() => toggleSuspectedCountry(value)}
-                  />
-                ))}
-                {query.cableTypes.map((value) => (
-                  <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
-                ))}
-                <button
-                  type="button"
-                  onClick={clearIncidentFilters}
-                  className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
-                >
-                  Clear all
-                </button>
-              </div>
             )}
-
-            {listMode === 'cables' && hasActiveCableFacets && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                {query.regions.map((value) => (
-                  <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
-                ))}
-                {query.cableTypes.map((value) => (
-                  <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
-                ))}
-                <button
-                  type="button"
-                  onClick={clearCableFilters}
-                  className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
-                >
-                  Clear all
-                </button>
-              </div>
+            {listMode === 'incidents' && (
+              <FilterDropdown
+                label="Suspected country"
+                options={meta?.suspected_countries ?? []}
+                selectedValues={query.suspectedCountries}
+                onToggle={toggleSuspectedCountry}
+                isOpen={openDropdown === 'suspectedCountry'}
+                onOpenChange={openDropdownHandler('suspectedCountry')}
+              />
             )}
+            <FilterDropdown
+              label="Cable type"
+              options={meta?.cable_types ?? []}
+              selectedValues={query.cableTypes}
+              onToggle={toggleCableType}
+              isOpen={openDropdown === 'cableType'}
+              onOpenChange={openDropdownHandler('cableType')}
+            />
           </div>
-        )}
+
+          {listMode === 'incidents' && hasActiveIncidentFilters && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {query.regions.map((value) => (
+                <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
+              ))}
+              {query.actorTiers.map((value) => (
+                <FilterPill
+                  key={`tier-${value}`}
+                  label={ACTOR_LABELS[value]}
+                  onRemove={() => toggleActorTier(value)}
+                />
+              ))}
+              {query.status && (
+                <FilterPill
+                  label={STATUS_LABELS[query.status]}
+                  onRemove={() => setStatusFilter(query.status)}
+                />
+              )}
+              {query.suspectedCountries.map((value) => (
+                <FilterPill
+                  key={`country-${value}`}
+                  label={value}
+                  onRemove={() => toggleSuspectedCountry(value)}
+                />
+              ))}
+              {query.cableTypes.map((value) => (
+                <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
+              ))}
+              <button
+                type="button"
+                onClick={clearIncidentFilters}
+                className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {listMode === 'cables' && hasActiveCableFacets && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {query.regions.map((value) => (
+                <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
+              ))}
+              {query.cableTypes.map((value) => (
+                <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
+              ))}
+              <button
+                type="button"
+                onClick={clearCableFilters}
+                className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {listMode === 'cables' ? (
