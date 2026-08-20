@@ -16,6 +16,7 @@ import type {
   FilterMeta,
   IncidentListItem,
   IncidentMarker,
+  IncidentQuery,
   StatusFilter,
 } from '../types/api'
 
@@ -39,6 +40,23 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       },
     )
   })
+}
+
+// While browsing Cables, only Region and Cable type apply — Nation-state, Status, and
+// Suspected country are incident-level facets that don't map onto a cable filter, and the
+// search box searches cable documents instead of incident documents.
+function effectiveIncidentQuery(query: IncidentQuery, listMode: ListMode): IncidentQuery {
+  if (listMode === 'cables') {
+    return {
+      q: '',
+      regions: query.regions,
+      actorTiers: [],
+      status: null,
+      suspectedCountries: [],
+      cableTypes: query.cableTypes,
+    }
+  }
+  return query
 }
 
 const ACTOR_LABELS: Record<ActorTier, string> = {
@@ -91,14 +109,7 @@ interface IncidentQueryResult {
   semanticUnavailable: boolean
 }
 
-async function runIncidentQuery(query: {
-  q: string
-  regions: string[]
-  actorTiers: ActorTier[]
-  status: StatusFilter | null
-  suspectedCountries: string[]
-  cableTypes: string[]
-}): Promise<IncidentQueryResult> {
+async function runIncidentQuery(query: IncidentQuery): Promise<IncidentQueryResult> {
   const trimmed = query.q.trim()
 
   if (!trimmed) {
@@ -172,6 +183,9 @@ export function IncidentRail() {
   const [cablesLoading, setCablesLoading] = useState(false)
   const [semanticScores, setSemanticScores] = useState<Map<string, number> | null>(null)
   const [semanticUnavailable, setSemanticUnavailable] = useState(false)
+  const [cableScores, setCableScores] = useState<Map<string, number> | null>(null)
+  const [cableSemanticUnavailable, setCableSemanticUnavailable] = useState(false)
+  const [searchedCableNames, setSearchedCableNames] = useState<string[] | null>(null)
 
   useEffect(() => {
     void fetchFilterMeta().then(setMeta).catch(console.error)
@@ -200,7 +214,7 @@ export function IncidentRail() {
   useEffect(() => {
     let cancelled = false
     setQueryLoading(true)
-    void runIncidentQuery(query)
+    void runIncidentQuery(effectiveIncidentQuery(query, listMode))
       .then(({ incidents, markers, scores, semanticUnavailable: unavailable }) => {
         if (cancelled) {
           return
@@ -218,7 +232,44 @@ export function IncidentRail() {
     return () => {
       cancelled = true
     }
-  }, [query, setFilteredResults, setQueryLoading])
+  }, [query, listMode, setFilteredResults, setQueryLoading])
+
+  // Cable-view text search runs against cable documents, not incident documents.
+  useEffect(() => {
+    if (listMode !== 'cables') {
+      return
+    }
+    const trimmed = query.q.trim()
+    if (!trimmed) {
+      setSearchedCableNames(null)
+      setCableScores(null)
+      setCableSemanticUnavailable(false)
+      return
+    }
+
+    let cancelled = false
+    void withTimeout(fetchSemanticSearch(trimmed, 'cables', SEMANTIC_CANDIDATE_LIMIT), SEMANTIC_SEARCH_TIMEOUT_MS)
+      .then((result) => {
+        if (cancelled) {
+          return
+        }
+        setCableScores(new Map(result.cables.map((cable) => [cable.name, cable.score])))
+        setSearchedCableNames(result.cables.map((cable) => cable.name))
+        setCableSemanticUnavailable(false)
+      })
+      .catch((error) => {
+        console.error('Cable semantic search unavailable, falling back to keyword match', error)
+        if (cancelled) {
+          return
+        }
+        setCableScores(null)
+        setSearchedCableNames(null)
+        setCableSemanticUnavailable(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [query.q, listMode])
 
   const handleSelect = async (incident: IncidentListItem) => {
     const detail = await fetchIncident(incident.id)
@@ -230,7 +281,7 @@ export function IncidentRail() {
     openCablePanel(name, detail)
   }
 
-  const clearFilters = () => {
+  const clearIncidentFilters = () => {
     setSearchDraft('')
     setQuery({
       q: '',
@@ -242,9 +293,14 @@ export function IncidentRail() {
     })
   }
 
+  const clearCableFilters = () => {
+    setSearchDraft('')
+    setQuery({ q: '', regions: [], cableTypes: [] })
+  }
+
   const isSearching = Boolean(searchDraft.trim())
 
-  const hasActiveFilters =
+  const hasActiveIncidentFilters =
     Boolean(query.q.trim()) ||
     query.regions.length > 0 ||
     query.actorTiers.length > 0 ||
@@ -252,12 +308,31 @@ export function IncidentRail() {
     query.suspectedCountries.length > 0 ||
     query.cableTypes.length > 0
 
-  const matchingCableNames = hasActiveFilters
+  const hasActiveCableFacets = query.regions.length > 0 || query.cableTypes.length > 0
+
+  const matchingCableNames = hasActiveCableFacets
     ? new Set(filteredIncidents.map((incident) => incident.canonical_cable_name))
     : null
-  const displayedCables = matchingCableNames
+  const facetFilteredCables = matchingCableNames
     ? allCables.filter((cable) => matchingCableNames.has(cable.name))
     : allCables
+
+  let displayedCables: CableSummary[]
+  if (isSearching && searchedCableNames) {
+    const byName = new Map(facetFilteredCables.map((cable) => [cable.name, cable]))
+    displayedCables = searchedCableNames
+      .map((name) => byName.get(name))
+      .filter((cable): cable is CableSummary => Boolean(cable))
+  } else if (isSearching && cableSemanticUnavailable) {
+    const needle = searchDraft.trim().toLowerCase()
+    displayedCables = facetFilteredCables.filter(
+      (cable) =>
+        cable.name.toLowerCase().includes(needle) ||
+        (cable.owners ?? '').toLowerCase().includes(needle),
+    )
+  } else {
+    displayedCables = facetFilteredCables
+  }
 
   const openDropdownHandler = (key: DropdownKey) => (open: boolean) =>
     setOpenDropdown(open ? key : null)
@@ -328,34 +403,42 @@ export function IncidentRail() {
               })
             }
           }}
-          placeholder="Search or describe an incident…"
+          placeholder={listMode === 'cables' ? 'Search or describe a cable…' : 'Search or describe an incident…'}
           className="mt-3 w-full border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--text)]"
         />
         {!isSearching ? (
           <p className="mt-1 text-[11px] text-[var(--muted)]">
             Matches by meaning, e.g. "anchor dragged near a strait" — not just exact words.
           </p>
+        ) : listMode === 'cables' ? (
+          cableSemanticUnavailable && (
+            <p className="mt-1 text-[11px] text-[var(--muted)]">
+              Showing keyword matches only (semantic search is unavailable right now).
+            </p>
+          )
         ) : semanticUnavailable ? (
           <p className="mt-1 text-[11px] text-[var(--muted)]">
             Showing keyword matches only (semantic search is unavailable right now).
           </p>
         ) : null}
 
+        {isSearching && listMode === 'cables' && (
+          <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs text-[var(--text)]">
+            <input
+              type="checkbox"
+              checked={hideQuietCables}
+              onChange={() => toggleHideQuietCables()}
+              className="mt-0.5"
+            />
+            <span>
+              Hide cables with no incidents
+              <span className="mt-0.5 block text-[var(--muted)]">Follows current filters</span>
+            </span>
+          </label>
+        )}
+
         {isSearching && (
           <div className="mt-3 space-y-2">
-            <label className="flex cursor-pointer items-start gap-2 text-xs text-[var(--text)]">
-              <input
-                type="checkbox"
-                checked={hideQuietCables}
-                onChange={() => toggleHideQuietCables()}
-                className="mt-0.5"
-              />
-              <span>
-                Hide cables with no incidents
-                <span className="mt-0.5 block text-[var(--muted)]">Follows current filters</span>
-              </span>
-            </label>
-
             <div className="flex flex-wrap gap-1.5">
               <FilterDropdown
                 label="Region"
@@ -365,32 +448,38 @@ export function IncidentRail() {
                 isOpen={openDropdown === 'region'}
                 onOpenChange={openDropdownHandler('region')}
               />
-              <FilterDropdown
-                label="Nation-state"
-                options={meta?.actor_tiers ?? []}
-                selectedValues={query.actorTiers}
-                onToggle={(value) => toggleActorTier(value as ActorTier)}
-                isOpen={openDropdown === 'actorTier'}
-                onOpenChange={openDropdownHandler('actorTier')}
-                formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
-              />
-              <FilterDropdown
-                label="Status"
-                options={meta?.statuses ?? []}
-                selectedValues={query.status ? [query.status] : []}
-                onToggle={(value) => setStatusFilter(value as StatusFilter)}
-                isOpen={openDropdown === 'status'}
-                onOpenChange={openDropdownHandler('status')}
-                formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
-              />
-              <FilterDropdown
-                label="Suspected country"
-                options={meta?.suspected_countries ?? []}
-                selectedValues={query.suspectedCountries}
-                onToggle={toggleSuspectedCountry}
-                isOpen={openDropdown === 'suspectedCountry'}
-                onOpenChange={openDropdownHandler('suspectedCountry')}
-              />
+              {listMode === 'incidents' && (
+                <FilterDropdown
+                  label="Nation-state"
+                  options={meta?.actor_tiers ?? []}
+                  selectedValues={query.actorTiers}
+                  onToggle={(value) => toggleActorTier(value as ActorTier)}
+                  isOpen={openDropdown === 'actorTier'}
+                  onOpenChange={openDropdownHandler('actorTier')}
+                  formatLabel={(value) => ACTOR_LABELS[value as ActorTier] ?? value}
+                />
+              )}
+              {listMode === 'incidents' && (
+                <FilterDropdown
+                  label="Status"
+                  options={meta?.statuses ?? []}
+                  selectedValues={query.status ? [query.status] : []}
+                  onToggle={(value) => setStatusFilter(value as StatusFilter)}
+                  isOpen={openDropdown === 'status'}
+                  onOpenChange={openDropdownHandler('status')}
+                  formatLabel={(value) => STATUS_LABELS[value as StatusFilter] ?? value}
+                />
+              )}
+              {listMode === 'incidents' && (
+                <FilterDropdown
+                  label="Suspected country"
+                  options={meta?.suspected_countries ?? []}
+                  selectedValues={query.suspectedCountries}
+                  onToggle={toggleSuspectedCountry}
+                  isOpen={openDropdown === 'suspectedCountry'}
+                  onOpenChange={openDropdownHandler('suspectedCountry')}
+                />
+              )}
               <FilterDropdown
                 label="Cable type"
                 options={meta?.cable_types ?? []}
@@ -401,7 +490,7 @@ export function IncidentRail() {
               />
             </div>
 
-            {hasActiveFilters && (
+            {listMode === 'incidents' && hasActiveIncidentFilters && (
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 {query.regions.map((value) => (
                   <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
@@ -431,7 +520,25 @@ export function IncidentRail() {
                 ))}
                 <button
                   type="button"
-                  onClick={clearFilters}
+                  onClick={clearIncidentFilters}
+                  className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+
+            {listMode === 'cables' && hasActiveCableFacets && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {query.regions.map((value) => (
+                  <FilterPill key={`region-${value}`} label={value} onRemove={() => toggleRegion(value)} />
+                ))}
+                {query.cableTypes.map((value) => (
+                  <FilterPill key={`type-${value}`} label={value} onRemove={() => toggleCableType(value)} />
+                ))}
+                <button
+                  type="button"
+                  onClick={clearCableFilters}
                   className="text-xs text-[var(--muted)] underline-offset-2 hover:text-[var(--text)] hover:underline"
                 >
                   Clear all
@@ -448,34 +555,43 @@ export function IncidentRail() {
             <p className="px-4 py-8 text-sm text-[var(--muted)]">No cables match these filters.</p>
           ) : (
             <ul className="divide-y divide-[var(--border)]">
-              {displayedCables.map((cable) => (
-                <li key={cable.name}>
-                  <button
-                    type="button"
-                    onClick={() => void handleSelectCable(cable.name)}
-                    className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--bg)]"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium leading-snug">{cable.name}</p>
-                      <span className="shrink-0 text-xs text-[var(--muted)]">
-                        {cable.incident_count} incident{cable.incident_count === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-[var(--muted)]">
-                      {cable.region || 'Unknown region'}
-                      {cable.status && (
-                        <>
-                          <span className="mx-1">·</span>
-                          {cable.status}
-                        </>
+              {displayedCables.map((cable) => {
+                const score = cableScores?.get(cable.name)
+                return (
+                  <li key={cable.name}>
+                    <button
+                      type="button"
+                      onClick={() => void handleSelectCable(cable.name)}
+                      className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--bg)]"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium leading-snug">{cable.name}</p>
+                        <span className="shrink-0 text-xs text-[var(--muted)]">
+                          {cable.incident_count} incident{cable.incident_count === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        {cable.region || 'Unknown region'}
+                        {cable.status && (
+                          <>
+                            <span className="mx-1">·</span>
+                            {cable.status}
+                          </>
+                        )}
+                        {score != null && (
+                          <>
+                            <span className="mx-1">·</span>
+                            {scorePercent(score)}% match
+                          </>
+                        )}
+                      </p>
+                      {cable.owners && (
+                        <p className="mt-1 line-clamp-1 text-xs text-[var(--muted)]">{cable.owners}</p>
                       )}
-                    </p>
-                    {cable.owners && (
-                      <p className="mt-1 line-clamp-1 text-xs text-[var(--muted)]">{cable.owners}</p>
-                    )}
-                  </button>
-                </li>
-              ))}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
