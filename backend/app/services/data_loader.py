@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 from app.config import settings
@@ -21,6 +21,8 @@ from app.models.schemas import (
 from app.services.actor_tier import (
     badge_color_for,
     classify_actor_tier,
+    classify_investigation_status,
+    extract_suspected_countries,
     is_resolved_status,
     marker_fill_for,
     status_stroke_for,
@@ -131,6 +133,7 @@ class DataStore:
             canonical_cable_name=incident.canonical_cable_name,
             original_cable_name=incident.original_cable_name,
             date=incident.date,
+            type=incident.type,
             status=incident.status,
             cause=incident.cause,
             nation_state_suspected=incident.nation_state_suspected,
@@ -142,6 +145,8 @@ class DataStore:
             region=incident.region,
             latitude=incident.latitude,
             longitude=incident.longitude,
+            suspected_countries=incident.suspected_countries,
+            investigation_status=incident.investigation_status,
         )
 
     def to_marker(self, incident: IncidentSummary) -> IncidentMarker | None:
@@ -166,12 +171,16 @@ class DataStore:
         q: str | None = None,
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
-        status: str | None = None,
+        investigation_statuses: list[str] | None = None,
+        suspected_countries: list[str] | None = None,
+        cable_types: list[str] | None = None,
     ) -> list[IncidentSummary]:
         query = (q or "").strip().lower()
         region_set = {value.strip() for value in (regions or []) if value.strip()}
         tier_set = {value.strip() for value in (actor_tiers or []) if value.strip()}
-        status_filter = (status or "").strip().lower() or None
+        investigation_status_set = {value.strip() for value in (investigation_statuses or []) if value.strip()}
+        country_set = {value.strip() for value in (suspected_countries or []) if value.strip()}
+        type_set = {value.strip() for value in (cable_types or []) if value.strip()}
 
         results: list[IncidentSummary] = []
         for incident in self.incidents:
@@ -179,9 +188,11 @@ class DataStore:
                 continue
             if tier_set and incident.actor_tier not in tier_set:
                 continue
-            if status_filter == "resolved" and not is_resolved_status(incident.status):
+            if investigation_status_set and incident.investigation_status not in investigation_status_set:
                 continue
-            if status_filter == "unresolved" and is_resolved_status(incident.status):
+            if country_set and not country_set.intersection(incident.suspected_countries):
+                continue
+            if type_set and incident.type not in type_set:
                 continue
             if query and not _incident_matches_query(incident, query):
                 continue
@@ -194,13 +205,17 @@ class DataStore:
         q: str | None = None,
         regions: list[str] | None = None,
         actor_tiers: list[str] | None = None,
-        status: str | None = None,
+        investigation_statuses: list[str] | None = None,
+        suspected_countries: list[str] | None = None,
+        cable_types: list[str] | None = None,
     ) -> list[IncidentMarker]:
         filtered = self.filter_incidents(
             q=q,
             regions=regions,
             actor_tiers=actor_tiers,
-            status=status,
+            investigation_statuses=investigation_statuses,
+            suspected_countries=suspected_countries,
+            cable_types=cable_types,
         )
         markers: list[IncidentMarker] = []
         for incident in filtered:
@@ -209,37 +224,81 @@ class DataStore:
                 markers.append(marker)
         return markers
 
-    def filter_meta(self) -> FilterMeta:
-        region_counts: dict[str, int] = {}
-        tier_counts: dict[str, int] = {"confirmed": 0, "suspected": 0, "none": 0}
-        resolved = 0
-        unresolved = 0
-        for incident in self.incidents:
-            region_counts[incident.region] = region_counts.get(incident.region, 0) + 1
-            tier_counts[incident.actor_tier] = tier_counts.get(incident.actor_tier, 0) + 1
-            if is_resolved_status(incident.status):
-                resolved += 1
-            else:
-                unresolved += 1
+    def filter_meta(
+        self,
+        *,
+        q: str | None = None,
+        regions: list[str] | None = None,
+        actor_tiers: list[str] | None = None,
+        investigation_statuses: list[str] | None = None,
+        suspected_countries: list[str] | None = None,
+        cable_types: list[str] | None = None,
+    ) -> FilterMeta:
+        # Each facet's counts are computed with every OTHER active filter applied but that
+        # facet's own selection excluded ("self-exclusion"), so e.g. picking "Confirmed" under
+        # Nation-state narrows the Region counts, while the Nation-state options themselves
+        # still show what each choice would yield instead of collapsing to only what's picked.
+        base = {
+            "q": q,
+            "regions": regions,
+            "actor_tiers": actor_tiers,
+            "investigation_statuses": investigation_statuses,
+            "suspected_countries": suspected_countries,
+            "cable_types": cable_types,
+        }
 
-        regions = [
+        def pool(exclude: str) -> list[IncidentSummary]:
+            kwargs = dict(base)
+            kwargs[exclude] = None
+            return self.filter_incidents(**kwargs)  # type: ignore[arg-type]
+
+        region_counts = _tally(pool("regions"), lambda incident: [incident.region])
+        tier_counts = _tally(pool("actor_tiers"), lambda incident: [incident.actor_tier])
+        investigation_status_counts = _tally(
+            pool("investigation_statuses"), lambda incident: [incident.investigation_status]
+        )
+        country_counts = _tally(pool("suspected_countries"), lambda incident: incident.suspected_countries)
+        type_counts = _tally(
+            pool("cable_types"), lambda incident: [incident.type] if incident.type else []
+        )
+
+        regions_out = [
             FilterCount(value=name, count=count)
             for name, count in sorted(region_counts.items(), key=lambda item: (-item[1], item[0]))
         ]
-        actor_tiers = [
+        actor_tiers_out = [
             FilterCount(value=name, count=tier_counts.get(name, 0))
             for name in ("confirmed", "suspected", "none")
         ]
-        statuses = [
-            FilterCount(value="resolved", count=resolved),
-            FilterCount(value="unresolved", count=unresolved),
+        investigation_statuses_out = [
+            FilterCount(value=name, count=investigation_status_counts.get(name, 0))
+            for name in ("ongoing", "resolved", "reported")
         ]
+        suspected_countries_out = [
+            FilterCount(value=name, count=count)
+            for name, count in sorted(country_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        cable_types_out = [
+            FilterCount(value=name, count=count)
+            for name, count in sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        total = len(self.filter_incidents(**base))  # type: ignore[arg-type]
         return FilterMeta(
-            regions=regions,
-            actor_tiers=actor_tiers,
-            statuses=statuses,
-            total=len(self.incidents),
+            regions=regions_out,
+            actor_tiers=actor_tiers_out,
+            investigation_statuses=investigation_statuses_out,
+            suspected_countries=suspected_countries_out,
+            cable_types=cable_types_out,
+            total=total,
         )
+
+
+def _tally(incidents: list[IncidentSummary], key_fn: Callable[[IncidentSummary], list[str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for incident in incidents:
+        for key in key_fn(incident):
+            counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _incident_matches_query(incident: IncidentSummary, query: str) -> bool:
@@ -384,6 +443,8 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         nation_state = (row.get("Nation State Suspected") or "").strip() or None
         status = (row.get("Status") or "").strip() or None
         actor_tier = classify_actor_tier(nation_state)
+        suspected_countries = extract_suspected_countries(nation_state)
+        investigation_status = classify_investigation_status(status)
         marker_fill = marker_fill_for(actor_tier)
         stroke = status_stroke_for(status)
         badge_color = badge_color_for(actor_tier, status)
@@ -430,6 +491,8 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
             latitude=latitude,
             longitude=longitude,
             coordinate_source=coordinate_source,  # type: ignore[arg-type]
+            suspected_countries=suspected_countries,
+            investigation_status=investigation_status,
         )
         raw_incidents.append(incident)
 

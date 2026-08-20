@@ -7,7 +7,7 @@ ActorTier = Literal["confirmed", "suspected", "none"]
 MarkerFill = Literal["red", "amber", "slate"]
 StatusStroke = Literal["resolved", "unresolved"]
 BadgeColor = Literal["red", "yellow", "green"]
-StatusFilter = Literal["resolved", "unresolved"]
+InvestigationStatus = Literal["ongoing", "resolved", "reported"]
 CoordinateSource = Literal["csv", "landing_midpoint", "cable_route", "none"]
 
 
@@ -36,6 +36,8 @@ class IncidentSummary(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     coordinate_source: CoordinateSource = "none"
+    suspected_countries: list[str] = Field(default_factory=list)
+    investigation_status: InvestigationStatus = "reported"
 
 
 class IncidentListItem(BaseModel):
@@ -43,6 +45,7 @@ class IncidentListItem(BaseModel):
     canonical_cable_name: str
     original_cable_name: str
     date: str
+    type: str | None = None
     status: str | None = None
     cause: str | None = None
     nation_state_suspected: str | None = None
@@ -54,6 +57,8 @@ class IncidentListItem(BaseModel):
     region: str = "Unknown"
     latitude: float | None = None
     longitude: float | None = None
+    suspected_countries: list[str] = Field(default_factory=list)
+    investigation_status: InvestigationStatus = "reported"
 
 
 class IncidentMarker(BaseModel):
@@ -98,7 +103,9 @@ class FilterCount(BaseModel):
 class FilterMeta(BaseModel):
     regions: list[FilterCount]
     actor_tiers: list[FilterCount]
-    statuses: list[FilterCount]
+    investigation_statuses: list[FilterCount]
+    suspected_countries: list[FilterCount]
+    cable_types: list[FilterCount]
     total: int
 
 

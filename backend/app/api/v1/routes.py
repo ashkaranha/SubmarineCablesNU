@@ -22,6 +22,11 @@ from app.services.source_finder import find_additional_sources
 
 router = APIRouter(prefix="/api/v1")
 
+# Cosine similarity below this is treated as "not actually related" and dropped from
+# semantic search results, so an off-topic query returns few/no matches instead of
+# padding out to `limit` with the least-bad nearest neighbors in the corpus.
+MIN_SEMANTIC_SCORE = 0.3
+
 
 def _split_csv_param(values: list[str] | None) -> list[str]:
     if not values:
@@ -46,8 +51,22 @@ def create_router(store: DataStore) -> APIRouter:
         )
 
     @router.get("/meta/filters", response_model=FilterMeta)
-    def meta_filters() -> FilterMeta:
-        return store.filter_meta()
+    def meta_filters(
+        q: str | None = Query(default=None),
+        region: list[str] | None = Query(default=None),
+        actor_tier: list[str] | None = Query(default=None),
+        investigation_status: list[str] | None = Query(default=None),
+        suspected_country: list[str] | None = Query(default=None),
+        cable_type: list[str] | None = Query(default=None),
+    ) -> FilterMeta:
+        return store.filter_meta(
+            q=q,
+            regions=_split_csv_param(region),
+            actor_tiers=_split_csv_param(actor_tier),
+            investigation_statuses=_split_csv_param(investigation_status),
+            suspected_countries=_split_csv_param(suspected_country),
+            cable_types=_split_csv_param(cable_type),
+        )
 
     @router.get("/cables", response_model=list[CableSummary])
     def list_cables() -> list[CableSummary]:
@@ -65,13 +84,17 @@ def create_router(store: DataStore) -> APIRouter:
         q: str | None = Query(default=None),
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
-        status: str | None = Query(default=None),
+        investigation_status: list[str] | None = Query(default=None),
+        suspected_country: list[str] | None = Query(default=None),
+        cable_type: list[str] | None = Query(default=None),
     ) -> list[IncidentListItem]:
         filtered = store.filter_incidents(
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
-            status=status,
+            investigation_statuses=_split_csv_param(investigation_status),
+            suspected_countries=_split_csv_param(suspected_country),
+            cable_types=_split_csv_param(cable_type),
         )
         return [store.to_list_item(incident) for incident in filtered]
 
@@ -87,13 +110,17 @@ def create_router(store: DataStore) -> APIRouter:
         q: str | None = Query(default=None),
         region: list[str] | None = Query(default=None),
         actor_tier: list[str] | None = Query(default=None),
-        status: str | None = Query(default=None),
+        investigation_status: list[str] | None = Query(default=None),
+        suspected_country: list[str] | None = Query(default=None),
+        cable_type: list[str] | None = Query(default=None),
     ) -> list[IncidentMarker]:
         return store.filter_markers(
             q=q,
             regions=_split_csv_param(region),
             actor_tiers=_split_csv_param(actor_tier),
-            status=status,
+            investigation_statuses=_split_csv_param(investigation_status),
+            suspected_countries=_split_csv_param(suspected_country),
+            cable_types=_split_csv_param(cable_type),
         )
 
     @router.get("/map/cables")
@@ -131,6 +158,7 @@ def create_router(store: DataStore) -> APIRouter:
         q: str = Query(..., min_length=1),
         search_type: str = Query(default="all", alias="type", pattern="^(all|incidents|cables)$"),
         limit: int = Query(default=10, ge=1, le=50),
+        min_score: float = Query(default=MIN_SEMANTIC_SCORE, ge=0, le=1),
     ) -> SearchResponse:
         aggregate = classify_query(store, q, limit=limit)
         if aggregate is not None:
@@ -146,10 +174,16 @@ def create_router(store: DataStore) -> APIRouter:
         try:
             if search_type in ("all", "incidents"):
                 incidents = [
-                    IncidentSearchResult(**row) for row in vector_db.search_incidents(embedding, limit)
+                    IncidentSearchResult(**row)
+                    for row in vector_db.search_incidents(embedding, limit)
+                    if row["score"] >= min_score
                 ]
             if search_type in ("all", "cables"):
-                cables = [CableSearchResult(**row) for row in vector_db.search_cables(embedding, limit)]
+                cables = [
+                    CableSearchResult(**row)
+                    for row in vector_db.search_cables(embedding, limit)
+                    if row["score"] >= min_score
+                ]
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"Vector database unavailable: {exc}") from exc
 

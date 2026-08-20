@@ -25,7 +25,7 @@ _CAUSE = re.compile(r"\bcauses?\b|\bwhy\b")
 _NATION = re.compile(r"\bnations?\b|\bstates?\b|\bcountr(y|ies)\b")
 _ACTOR = re.compile(r"\bactors?\b|\bvessels?\b|\bindividuals?\b")
 _YEAR = re.compile(r"\byears?\b|\bwhen\b|\bover time\b|\btimeline\b")
-_RESOLVED = re.compile(r"\bresolved\b|\bunresolved\b")
+_RESOLVED = re.compile(r"\bresolved\b|\bunresolved\b|\bongoing\b|\breported\b|\binvestigation status\b")
 
 
 def classify_query(store: DataStore, query: str, limit: int = 10) -> AggregateResult | None:
@@ -73,6 +73,6 @@ def classify_query(store: DataStore, query: str, limit: int = 10) -> AggregateRe
     if _RESOLVED.search(text):
         items = aggregates.resolved_breakdown(store)
         if items:
-            return AggregateResult(title="Resolved vs unresolved", items=items)
+            return AggregateResult(title="Incidents by investigation status", items=items)
 
     return None

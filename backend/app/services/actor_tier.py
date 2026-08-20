@@ -4,6 +4,9 @@ ActorTier = Literal["confirmed", "suspected", "none"]
 MarkerFill = Literal["red", "amber", "slate"]
 StatusStroke = Literal["resolved", "unresolved"]
 BadgeColor = Literal["red", "yellow", "green"]
+InvestigationStatus = Literal["ongoing", "resolved", "reported"]
+
+RESOLVED_PREFIXES = ("resolved", "closed", "concluded")
 
 NONE_PATTERNS = (
     "unknown",
@@ -30,6 +33,23 @@ STATE_HINTS = (
     "houthis",
     "gchq",
     "nsa",
+)
+
+COUNTRY_HINTS = (
+    ("china", "China"),
+    ("russia", "Russia"),
+    ("iran", "Iran"),
+    ("yemen", "Yemen"),
+    ("uk ", "United Kingdom"),
+    ("gchq", "United Kingdom"),
+    ("usa", "United States"),
+    ("nsa", "United States"),
+    ("ukraine", "Ukraine"),
+    ("egypt", "Egypt"),
+    ("georgia", "Georgia"),
+    ("kazakh", "Kazakhstan"),
+    ("azerbaijan", "Azerbaijan"),
+    ("australia", "Australia"),
 )
 
 
@@ -68,8 +88,39 @@ def classify_actor_tier(nation_state_suspected: str | None) -> ActorTier:
     return "suspected"
 
 
+def extract_suspected_countries(nation_state_suspected: str | None) -> list[str]:
+    lowered = _normalize(nation_state_suspected).lower()
+    if not lowered:
+        return []
+
+    found: list[str] = []
+    for hint, canonical in COUNTRY_HINTS:
+        if hint in lowered and canonical not in found:
+            found.append(canonical)
+    return found
+
+
 def is_resolved_status(status: str | None) -> bool:
     return _normalize(status).lower().startswith("resolved")
+
+
+def classify_investigation_status(status: str | None) -> InvestigationStatus:
+    lowered = _normalize(status).lower()
+    if not lowered:
+        return "reported"
+
+    if lowered.startswith(RESOLVED_PREFIXES):
+        return "resolved"
+
+    if "ongoing" in lowered or "underway" in lowered:
+        return "ongoing"
+
+    # e.g. "International cable resolved 22 Feb 2022; domestic cable resolved July 2023",
+    # where "resolved" describes the outcome but isn't the first word.
+    if "resolved" in lowered:
+        return "resolved"
+
+    return "reported"
 
 
 def marker_fill_for(actor_tier: ActorTier) -> MarkerFill:

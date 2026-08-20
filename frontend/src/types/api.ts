@@ -2,7 +2,7 @@ export type ActorTier = 'confirmed' | 'suspected' | 'none'
 export type MarkerFill = 'red' | 'amber' | 'slate'
 export type StatusStroke = 'resolved' | 'unresolved'
 export type BadgeColor = 'red' | 'yellow' | 'green'
-export type StatusFilter = 'resolved' | 'unresolved'
+export type InvestigationStatus = 'ongoing' | 'resolved' | 'reported'
 export type CoordinateSource = 'csv' | 'landing_midpoint' | 'cable_route' | 'none'
 
 export interface IncidentSummary {
@@ -30,6 +30,8 @@ export interface IncidentSummary {
   latitude?: number | null
   longitude?: number | null
   coordinate_source: CoordinateSource
+  suspected_countries: string[]
+  investigation_status: InvestigationStatus
 }
 
 export interface IncidentListItem {
@@ -37,6 +39,7 @@ export interface IncidentListItem {
   canonical_cable_name: string
   original_cable_name: string
   date: string
+  type?: string | null
   status?: string | null
   cause?: string | null
   nation_state_suspected?: string | null
@@ -48,6 +51,8 @@ export interface IncidentListItem {
   region: string
   latitude?: number | null
   longitude?: number | null
+  suspected_countries: string[]
+  investigation_status: InvestigationStatus
 }
 
 export interface IncidentMarker {
@@ -85,7 +90,9 @@ export interface FilterCount {
 export interface FilterMeta {
   regions: FilterCount[]
   actor_tiers: FilterCount[]
-  statuses: FilterCount[]
+  investigation_statuses: FilterCount[]
+  suspected_countries: FilterCount[]
+  cable_types: FilterCount[]
   total: number
 }
 
@@ -93,7 +100,9 @@ export interface IncidentQuery {
   q: string
   regions: string[]
   actorTiers: ActorTier[]
-  status: StatusFilter | null
+  investigationStatuses: InvestigationStatus[]
+  suspectedCountries: string[]
+  cableTypes: string[]
 }
 
 export interface LLMSource {

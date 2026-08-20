@@ -1,6 +1,7 @@
 import type { FeatureCollection } from 'geojson'
 import type {
   CableDetail,
+  CableSummary,
   FilterMeta,
   IncidentListItem,
   IncidentMarker,
@@ -40,8 +41,14 @@ function buildQueryString(query?: Partial<IncidentQuery>): string {
   for (const tier of query.actorTiers ?? []) {
     params.append('actor_tier', tier)
   }
-  if (query.status) {
-    params.set('status', query.status)
+  for (const investigationStatus of query.investigationStatuses ?? []) {
+    params.append('investigation_status', investigationStatus)
+  }
+  for (const country of query.suspectedCountries ?? []) {
+    params.append('suspected_country', country)
+  }
+  for (const cableType of query.cableTypes ?? []) {
+    params.append('cable_type', cableType)
   }
   const text = params.toString()
   return text ? `?${text}` : ''
@@ -64,6 +71,10 @@ export function fetchCable(name: string): Promise<CableDetail> {
   return getJson<CableDetail>(`/cables/${encodeURIComponent(name)}`)
 }
 
+export function fetchCables(): Promise<CableSummary[]> {
+  return getJson<CableSummary[]>('/cables')
+}
+
 export function fetchIncident(id: string): Promise<IncidentSummary> {
   return getJson<IncidentSummary>(`/incidents/${encodeURIComponent(id)}`)
 }
@@ -72,8 +83,8 @@ export function fetchIncidents(query?: Partial<IncidentQuery>): Promise<Incident
   return getJson<IncidentListItem[]>(`/incidents${buildQueryString(query)}`)
 }
 
-export function fetchFilterMeta(): Promise<FilterMeta> {
-  return getJson<FilterMeta>('/meta/filters')
+export function fetchFilterMeta(query?: Partial<IncidentQuery>): Promise<FilterMeta> {
+  return getJson<FilterMeta>(`/meta/filters${buildQueryString(query)}`)
 }
 
 export function fetchIncidentSources(id: string): Promise<IncidentSourcesResponse> {

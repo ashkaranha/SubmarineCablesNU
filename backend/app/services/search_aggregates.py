@@ -55,4 +55,7 @@ def incidents_by_year(store: DataStore) -> list[AggregateItem]:
 
 def resolved_breakdown(store: DataStore) -> list[AggregateItem]:
     meta = store.filter_meta()
-    return [AggregateItem(label=status.value, count=status.count) for status in meta.statuses]
+    return [
+        AggregateItem(label=status.value, count=status.count)
+        for status in meta.investigation_statuses
+    ]
