@@ -59,6 +59,24 @@ function effectiveIncidentQuery(query: IncidentQuery, listMode: ListMode): Incid
   return query
 }
 
+// Filter-count requests need the search text too (so Region/Cable type counts respond to
+// what's actually being searched for), unlike the incidents-pipeline query above — that one
+// deliberately drops text in cable view since cable search runs semantically against cable
+// documents, not through the incidents endpoint's plain substring match.
+function effectiveMetaQuery(query: IncidentQuery, listMode: ListMode): IncidentQuery {
+  if (listMode === 'cables') {
+    return {
+      q: query.q,
+      regions: query.regions,
+      actorTiers: [],
+      status: null,
+      suspectedCountries: [],
+      cableTypes: query.cableTypes,
+    }
+  }
+  return query
+}
+
 const ACTOR_LABELS: Record<ActorTier, string> = {
   confirmed: 'Confirmed',
   suspected: 'Suspected',
@@ -191,7 +209,7 @@ export function IncidentRail() {
   // facet computed with every OTHER filter applied but its own selection excluded), so
   // e.g. picking a Nation-state narrows the Region counts as you go.
   useEffect(() => {
-    void fetchFilterMeta(effectiveIncidentQuery(query, listMode)).then(setMeta).catch(console.error)
+    void fetchFilterMeta(effectiveMetaQuery(query, listMode)).then(setMeta).catch(console.error)
   }, [query, listMode])
 
   useEffect(() => {
@@ -345,15 +363,6 @@ export function IncidentRail() {
       <div className="border-b border-[var(--border)] px-4 pb-3 pt-14">
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold">{listMode === 'cables' ? 'Cables' : 'Incidents'}</h2>
-          <span className="text-xs text-[var(--muted)]">
-            {listMode === 'cables'
-              ? cablesLoading
-                ? 'Loading…'
-                : `${displayedCables.length} cable${displayedCables.length === 1 ? '' : 's'}`
-              : queryLoading
-                ? 'Loading…'
-                : `${resultCount} result${resultCount === 1 ? '' : 's'}`}
-          </span>
         </div>
 
         <button
@@ -536,6 +545,16 @@ export function IncidentRail() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-xs font-medium text-[var(--muted)]">
+        {listMode === 'cables'
+          ? cablesLoading
+            ? 'Loading…'
+            : `${displayedCables.length} cable${displayedCables.length === 1 ? '' : 's'} found`
+          : queryLoading
+            ? 'Loading…'
+            : `${resultCount} result${resultCount === 1 ? '' : 's'} found`}
       </div>
 
       {listMode === 'cables' ? (
