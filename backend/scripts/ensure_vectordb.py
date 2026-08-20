@@ -2,9 +2,9 @@
 
 Run automatically (in the background, non-blocking) from app.main's lifespan
 so semantic search works with just `docker compose up` -- no separate manual
-`ingest_vectordb` step required. Skips quietly, leaving semantic search
-unavailable, if GOOGLE_API_KEY isn't set or the database isn't reachable yet;
-the rest of the app is unaffected either way.
+`ingest_vectordb` step required, and no API key needed since embeddings are
+computed locally. Skips quietly, leaving semantic search unavailable, if the
+database isn't reachable yet; the rest of the app is unaffected either way.
 
 Can also be run directly:
     python -m scripts.ensure_vectordb
@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from app.services.embeddings import EMBEDDING_DIMENSIONS
 from scripts.ingest_vectordb import (
     DEFAULT_DATA_DIR,
     DEFAULT_DATABASE_URL,
@@ -26,11 +27,17 @@ from scripts.ingest_vectordb import (
 )
 
 
-def main() -> None:
-    if not os.environ.get("GOOGLE_API_KEY"):
-        print("GOOGLE_API_KEY not set - skipping automatic semantic search setup.")
-        return
+def _table_state(cur, table: str) -> tuple[int, int | None]:
+    """Returns (row_count, embedding_dimension_of_first_row_or_None)."""
+    cur.execute(f"select to_regclass('public.{table}')")
+    if cur.fetchone()[0] is None:
+        return 0, None
+    cur.execute(f"select count(*), max(vector_dims(embedding)) from {table}")
+    count, dims = cur.fetchone()
+    return count, dims
 
+
+def main() -> None:
     import psycopg
 
     database_url = os.environ.get("CABLEINCIDENTS_DATABASE_URL", DEFAULT_DATABASE_URL)
@@ -43,16 +50,23 @@ def main() -> None:
     try:
         with psycopg.connect(database_url, connect_timeout=5) as conn:
             with conn.cursor() as cur:
-                cur.execute("select to_regclass('public.incidents'), to_regclass('public.cables')")
-                incidents_exists, cables_exists = cur.fetchone()
-                current_incidents = 0
-                current_cables = 0
-                if incidents_exists:
-                    cur.execute("select count(*) from incidents")
-                    current_incidents = cur.fetchone()[0]
-                if cables_exists:
-                    cur.execute("select count(*) from cables")
-                    current_cables = cur.fetchone()[0]
+                current_incidents, incident_dims = _table_state(cur, "incidents")
+                current_cables, cable_dims = _table_state(cur, "cables")
+
+                # A table left over from a previous embedding model (different dimension)
+                # can't be reused -- drop it so ingest() rebuilds it at the current size,
+                # rather than failing later with a pgvector dimension mismatch.
+                stale_incidents = incident_dims is not None and incident_dims != EMBEDDING_DIMENSIONS
+                stale_cables = cable_dims is not None and cable_dims != EMBEDDING_DIMENSIONS
+                if stale_incidents:
+                    print(f"Existing incidents embeddings are {incident_dims}-dim, expected {EMBEDDING_DIMENSIONS} - dropping to re-ingest.")
+                    cur.execute("DROP TABLE incidents CASCADE")
+                    current_incidents = 0
+                if stale_cables:
+                    print(f"Existing cables embeddings are {cable_dims}-dim, expected {EMBEDDING_DIMENSIONS} - dropping to re-ingest.")
+                    cur.execute("DROP TABLE cables CASCADE")
+                    current_cables = 0
+            conn.commit()
     except Exception as exc:
         print(f"Vector DB not reachable ({exc}) - skipping automatic semantic search setup.")
         return
@@ -77,8 +91,6 @@ def main() -> None:
             skip_incidents=skip_incidents,
         )
         print("Semantic search is ready.")
-    except SystemExit as exc:
-        print(f"Automatic semantic search setup skipped: {exc}")
     except Exception as exc:
         print(f"Automatic semantic search setup failed ({exc}); semantic search will be unavailable.")
 

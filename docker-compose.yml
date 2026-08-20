@@ -21,6 +21,7 @@ services:
       - "8001:8001"
     volumes:
       - ./data:/data
+      - hf_cache:/root/.cache/huggingface
     environment:
       CABLEINCIDENTS_DATA_DIR: /data
       CABLEINCIDENTS_DATABASE_URL: postgresql://cableincidents:cableincidents@db:5432/cableincidents
@@ -40,3 +41,4 @@ services:
 
 volumes:
   pgvector_data:
+  hf_cache:
