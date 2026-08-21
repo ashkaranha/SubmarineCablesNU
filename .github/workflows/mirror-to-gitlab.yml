@@ -1,0 +1,29 @@
+name: Mirror to GitLab
+
+# Keeps gitlab.com/nusubmarinecables-group/SubmarineCablesNU in sync with
+# this GitHub repo automatically, so Cloud Run/Vercel/whatever is watching
+# the GitLab side never falls behind. Runs for pushes from anyone (it's
+# triggered by the push event itself, not tied to a specific person's
+# account) as long as this workflow file and the GITLAB_MIRROR_TOKEN repo
+# secret exist.
+on:
+  push:
+    branches:
+      - main
+      - production
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to GitLab
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/nusubmarinecables-group/SubmarineCablesNU.git"
+          git push gitlab "${{ github.ref_name }}"
