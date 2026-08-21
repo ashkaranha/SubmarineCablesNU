@@ -48,7 +48,7 @@ def main() -> None:
     expected_incidents = len(build_incident_rows(data_dir))
 
     try:
-        with psycopg.connect(database_url, connect_timeout=5) as conn:
+        with psycopg.connect(database_url, connect_timeout=5, prepare_threshold=None) as conn:
             with conn.cursor() as cur:
                 current_incidents, incident_dims = _table_state(cur, "incidents")
                 current_cables, cable_dims = _table_state(cur, "cables")

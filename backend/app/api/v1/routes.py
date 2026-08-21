@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/v1")
 # Cosine similarity below this is treated as "not actually related" and dropped from
 # semantic search results, so an off-topic query returns few/no matches instead of
 # padding out to `limit` with the least-bad nearest neighbors in the corpus.
-MIN_SEMANTIC_SCORE = 0.3
+MIN_SEMANTIC_SCORE = 0.5
 
 
 def _split_csv_param(values: list[str] | None) -> list[str]:
