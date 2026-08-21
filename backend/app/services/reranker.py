@@ -15,7 +15,9 @@ It's slower per-pair, so it's only used to rerank a modest candidate pool
 
 from __future__ import annotations
 
+import ctypes
 import logging
+import sys
 from functools import lru_cache
 from typing import TYPE_CHECKING, Callable
 
@@ -25,6 +27,34 @@ if TYPE_CHECKING:
     from fastembed.rerank.cross_encoder import TextCrossEncoder
 
 logger = logging.getLogger(__name__)
+
+_libc: ctypes.CDLL | None = None
+if sys.platform.startswith("linux"):
+    try:
+        _libc = ctypes.CDLL("libc.so.6")
+    except OSError:
+        _libc = None
+
+
+def _release_memory_to_os() -> None:
+    """Ask glibc to hand freed heap memory back to the OS.
+
+    Disabling ONNX Runtime's own memory arena (below) stops *it* from
+    permanently reserving a large scratch buffer, but on Linux, glibc's
+    malloc has its own habit of keeping freed memory in the process instead
+    of returning it via sbrk/munmap -- especially after the kind of bursty,
+    varied-size allocations a transformer forward pass does. That can make a
+    process's RSS climb request-over-request even though nothing is actually
+    leaking at the Python level, which is consistent with search working
+    once and then the process getting OOM-killed on the next call. This is a
+    no-op everywhere except Linux glibc.
+    """
+    if _libc is None:
+        return
+    try:
+        _libc.malloc_trim(0)
+    except Exception:  # pragma: no cover - best-effort cleanup
+        pass
 
 # How far below the top reranked score a candidate can be and still be kept.
 # A relative cutoff (rather than a fixed absolute one) is needed because the
@@ -127,6 +157,8 @@ def rerank(
     except Exception:
         logger.warning("Cross-encoder reranking unavailable, falling back to candidate order", exc_info=True)
         return [(row, _FALLBACK_DISPLAY_SCORE) for row in rows]
+    finally:
+        _release_memory_to_os()
 
     ranked = sorted(zip(scores, rows), key=lambda pair: pair[0], reverse=True)
     best_score = ranked[0][0]
