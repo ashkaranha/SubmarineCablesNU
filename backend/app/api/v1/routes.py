@@ -14,25 +14,22 @@ from app.models.schemas import (
     IncidentSummary,
     SearchResponse,
 )
-from app.services import reranker, vector_db
+from app.services import reranker, search_lexical
 from app.services.data_loader import DataStore
-from app.services.embeddings import embed_text
 from app.services.search_intent import classify_query
 from app.services.source_finder import find_additional_sources
 
 router = APIRouter(prefix="/api/v1")
 
-# Cosine similarity below this is treated as "not actually related" and dropped from
-# semantic search results, so an off-topic query returns few/no matches instead of
-# padding out to `limit` with the least-bad nearest neighbors in the corpus. This is
-# now just a loose floor on the initial candidate pool -- the cross-encoder reranker
-# (see app/services/reranker.py) does the real relevance filtering, since bi-encoder
-# cosine similarity alone doesn't separate genuinely relevant results from unrelated
-# ones well enough on these short, formulaic documents.
-MIN_SEMANTIC_SCORE = 0.3
-
-# How many nearest-neighbor candidates to pull from the vector DB before reranking.
-# Wider than what's ultimately shown so the cross-encoder has enough to work with.
+# How many BM25 candidates to pull before reranking. Wider than what's
+# ultimately shown so the cross-encoder has enough to work with. Search used
+# to retrieve this pool from a bi-encoder + pgvector ANN search, but running
+# that model alongside the cross-encoder reranker cost ~280MB of resident
+# memory for the two ONNX models alone -- enough to exceed Render's 512MB
+# free-tier limit on every search. BM25 (see search_lexical.py) gets a
+# similarly good candidate pool from the in-memory data store for
+# effectively no memory cost, and the cross-encoder still does the real
+# relevance filtering on top of it.
 CANDIDATE_POOL_SIZE = 40
 
 
@@ -49,6 +46,14 @@ def _split_csv_param(values: list[str] | None) -> list[str]:
 
 
 def create_router(store: DataStore) -> APIRouter:
+    incident_rows = [search_lexical.incident_row(incident) for incident in store.incidents]
+    incident_documents = [reranker.incident_document(row) for row in incident_rows]
+    incident_index = search_lexical.build_index(incident_documents)
+
+    cable_rows = [search_lexical.cable_row(cable) for cable in store.cables.values()]
+    cable_documents = [reranker.cable_document(row) for row in cable_rows]
+    cable_index = search_lexical.build_index(cable_documents)
+
     @router.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(
@@ -166,38 +171,23 @@ def create_router(store: DataStore) -> APIRouter:
         q: str = Query(..., min_length=1),
         search_type: str = Query(default="all", alias="type", pattern="^(all|incidents|cables)$"),
         limit: int = Query(default=10, ge=1, le=50),
-        min_score: float = Query(default=MIN_SEMANTIC_SCORE, ge=0, le=1),
     ) -> SearchResponse:
         aggregate = classify_query(store, q, limit=limit)
         if aggregate is not None:
             return SearchResponse(query=q, aggregate=aggregate)
 
-        try:
-            embedding = embed_text(q)
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail=f"Embedding model unavailable: {exc}") from exc
-
         incidents: list[IncidentSearchResult] = []
         cables: list[CableSearchResult] = []
-        try:
-            if search_type in ("all", "incidents"):
-                pool = [
-                    row
-                    for row in vector_db.search_incidents(embedding, CANDIDATE_POOL_SIZE)
-                    if row["score"] >= min_score
-                ]
-                ranked = reranker.rerank_incidents(q, pool)
-                incidents = [IncidentSearchResult(**row) for row in ranked[:limit]]
-            if search_type in ("all", "cables"):
-                pool = [
-                    row
-                    for row in vector_db.search_cables(embedding, CANDIDATE_POOL_SIZE)
-                    if row["score"] >= min_score
-                ]
-                ranked = reranker.rerank_cables(q, pool)
-                cables = [CableSearchResult(**row) for row in ranked[:limit]]
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail=f"Vector database unavailable: {exc}") from exc
+        if search_type in ("all", "incidents"):
+            candidate_indices = search_lexical.top_candidates(incident_index, q, CANDIDATE_POOL_SIZE)
+            pool = [incident_rows[i] for i in candidate_indices]
+            ranked = reranker.rerank_incidents(q, pool)
+            incidents = [IncidentSearchResult(**row, score=score) for row, score in ranked[:limit]]
+        if search_type in ("all", "cables"):
+            candidate_indices = search_lexical.top_candidates(cable_index, q, CANDIDATE_POOL_SIZE)
+            pool = [cable_rows[i] for i in candidate_indices]
+            ranked = reranker.rerank_cables(q, pool)
+            cables = [CableSearchResult(**row, score=score) for row, score in ranked[:limit]]
 
         return SearchResponse(query=q, incidents=incidents, cables=cables)
 
