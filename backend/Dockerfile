@@ -14,5 +14,11 @@ COPY backend/db ./db
 COPY data /data
 
 ENV CABLEINCIDENTS_DATA_DIR=/data
+# glibc's malloc keeps multiple per-thread memory arenas by default, which
+# fragments and inflates RSS under the kind of bursty allocations an ONNX
+# model's forward pass does. Capping to one arena (combined with the
+# explicit malloc_trim() call in app/services/reranker.py) keeps memory
+# from creeping up across repeated search requests.
+ENV MALLOC_ARENA_MAX=1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

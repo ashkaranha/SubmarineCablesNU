@@ -22,15 +22,11 @@ from app.services.source_finder import find_additional_sources
 router = APIRouter(prefix="/api/v1")
 
 # How many BM25 candidates to pull before reranking. Wider than what's
-# ultimately shown so the cross-encoder has enough to work with. Search used
-# to retrieve this pool from a bi-encoder + pgvector ANN search, but running
-# that model alongside the cross-encoder reranker cost ~280MB of resident
-# memory for the two ONNX models alone -- enough to exceed Render's 512MB
-# free-tier limit on every search. BM25 (see search_lexical.py) gets a
-# similarly good candidate pool from the in-memory data store for
-# effectively no memory cost, and the cross-encoder still does the real
-# relevance filtering on top of it.
-CANDIDATE_POOL_SIZE = 40
+# ultimately shown so the cross-encoder has enough to work with, but kept
+# modest -- every extra candidate is another document run through the
+# cross-encoder's forward pass in the same batch, which raises the peak
+# memory a single request needs on a host that's already tight on RAM.
+CANDIDATE_POOL_SIZE = 20
 
 
 def _split_csv_param(values: list[str] | None) -> list[str]:
