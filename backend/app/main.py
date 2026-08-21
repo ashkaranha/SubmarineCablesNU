@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,23 +10,18 @@ from app.services.data_loader import DataStore, load_data_store
 store: DataStore | None = None
 
 
-async def _ensure_vector_db_background() -> None:
-    """Populate the vector DB in the background so semantic search is ready
-    without a separate manual step, without blocking API startup on it."""
-    from scripts import ensure_vectordb
-
-    try:
-        await asyncio.to_thread(ensure_vectordb.main)
-    except Exception as exc:  # pragma: no cover - best-effort background setup
-        print(f"Automatic semantic search setup failed: {exc}")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Semantic search now runs entirely in-process (BM25 candidate retrieval +
+    # cross-encoder reranking over the in-memory data store -- see
+    # app/services/search_lexical.py and app/services/reranker.py), so there's
+    # no vector DB to populate on startup anymore. That background bulk-embed
+    # job used to embed the whole corpus (~1600 rows) on every deploy, which
+    # was the original cause of Render OOM crashes before it was ever moved
+    # off the request path.
     global store
     store = load_data_store()
     app.include_router(create_router(store))
-    asyncio.create_task(_ensure_vector_db_background())
     yield
 
 
