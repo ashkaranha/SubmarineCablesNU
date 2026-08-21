@@ -1,0 +1,41 @@
+# Builds the backend image using backend/Dockerfile with the repo root as
+# build context (needed because the Dockerfile COPYs the sibling `data/`
+# directory), pushes it, then deploys it to Cloud Run. Used both for manual
+# deploys (`gcloud builds submit --config cloudbuild.yaml ...`) and by the
+# GitLab push trigger for auto-deploy on push to `production`.
+#
+# Deliberately does NOT pass --set-env-vars on the deploy step -- Cloud Run
+# preserves a service's existing env vars/secrets across deploys of a new
+# image, so those only need to be set once (see CLOUD_RUN_DEPLOY.md) rather
+# than baked into this file (which is checked into git).
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-f"
+      - "backend/Dockerfile"
+      - "-t"
+      - "${_IMAGE}"
+      - "."
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "${_IMAGE}"]
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE}"
+      - "--image=${_IMAGE}"
+      - "--region=${_REGION}"
+      - "--port=8001"
+      - "--memory=1Gi"
+      - "--cpu=1"
+      - "--concurrency=8"
+      - "--allow-unauthenticated"
+images:
+  - "${_IMAGE}"
+substitutions:
+  _SERVICE: submarinecables-backend
+  _REGION: us-central1
+options:
+  logging: CLOUD_LOGGING_ONLY
