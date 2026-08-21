@@ -1,0 +1,77 @@
+id,canonical_cable_name,specific_location,proposed_latitude,proposed_longitude,source,confidence,note
+1,Bornholm Cable,"55°17?50?N 14°26?07?E, just over 15 kilometers off the Swedish coast at a depth of 50 meters.",55.297222,14.435278,parsed,precise,Coordinates were already written out in Specific Location.
+66,Asia-America Gateway (AAG) Cable System,"Vung Tau, Vietnam",10.348189,107.075335,geocoded,precise,"Nominatim match: Phường Vũng Tàu, Thành phố Hồ Chí Minh, Việt Nam"
+67,Asia-America Gateway (AAG) Cable System,"Vung Tau, Vietnam",10.348189,107.075335,geocoded,precise,"Nominatim match: Phường Vũng Tàu, Thành phố Hồ Chí Minh, Việt Nam"
+68,Asia-America Gateway (AAG) Cable System,"Vung Tau, Vietnam",10.348189,107.075335,geocoded,precise,"Nominatim match: Phường Vũng Tàu, Thành phố Hồ Chí Minh, Việt Nam"
+114,R100 North,"Near Orkney Islands, United Kingdom",58.941823,-3.129694,geocoded,vague,"Nominatim match: Orkney Islands, Alba / Scotland, United Kingdom"
+115,EAC-C2C,Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+116,Asia Pacific Gateway (APG),Off Malaysia,4.569375,102.265682,geocoded,vague,Nominatim match: Malaysia
+117,Taiwan Penghu Kinmen Matsu No.2 (TPKM2),Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+119,Asia Africa Europe-1 (AAE-1),Off Thailand,14.897192,100.832730,geocoded,vague,Nominatim match: ประเทศไทย
+120,Trans-Pacific Express (TPE) Cable System,Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+123,Apricot,Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+125,EAC-C2C,"Taiwan, Philippines",,,,not_found,No geocoding match found for this location text.
+126,Trans-Pacific Express (TPE) Cable System,Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+127,Southeast Asia-Japan Cable 2 (SJC2),"Taiwan, Japan",,,,not_found,No geocoding match found for this location text.
+128,EAC-C2C,"Taiwan, Hong Kong",,,,not_found,No geocoding match found for this location text.
+129,Pacific Light Cable Network (PLCN),Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+130,APCN-2,Taiwan Strait / South China Sea,,,,not_found,No geocoding match found for this location text.
+131,Asia Pacific Gateway (APG),Off Singapore,1.357107,103.819499,geocoded,vague,Nominatim match: Singapore
+133,Taiwan Strait Express-1 (TSE-1),Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+134,Taiwan Penghu Kinmen Matsu No.2 (TPKM2),Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+135,SHEFA-2,"Near Shetland Islands, United Kingdom",60.333333,-1.333333,geocoded,vague,"Nominatim match: Shetland Islands, Alba / Scotland, United Kingdom"
+136,BT Highlands and Islands Submarine Cable System,"Near Shetland Islands, United Kingdom",60.333333,-1.333333,geocoded,vague,"Nominatim match: Shetland Islands, Alba / Scotland, United Kingdom"
+137,Chennai-Andaman & Nicobar Islands Cable (CANI),"Car Nicobar-Kamorta segment, India",,,,not_found,No geocoding match found for this location text.
+138,FLAG North Asia Loop/REACH North Asia Loop,Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+143,EAC-C2C,"Hong Kong, Singapore",,,,not_found,No geocoding match found for this location text.
+144,EAC-C2C,Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+145,SHEFA-2,"Near Shetland/Orkney Islands, United Kingdom",,,,not_found,No geocoding match found for this location text.
+146,Alaska United Southeast (AU-SE),"Sitka, Alaska, United States",57.408608,-135.459621,geocoded,vague,"Nominatim match: Sitka, Alaska, 99835, United States"
+150,Asia Pacific Gateway (APG),Off Malaysia,4.569375,102.265682,geocoded,vague,Nominatim match: Malaysia
+151,Darwin-Jakarta-Singapore Cable (DJSC),Darwin-Jakarta-Singapore route,,,,not_found,No geocoding match found for this location text.
+152,North-West Cable System,Australia,-24.776109,134.755000,geocoded,vague,Nominatim match: Australia
+154,Taiwan Penghu Kinmen Matsu No.2 (TPKM2),Taiwan Strait,24.491739,119.605402,geocoded,vague,Nominatim match: 台湾海峡/臺灣海峽
+156,Quintillion Subsea Cable Network,"Alaska, United States",64.445961,-149.680909,geocoded,vague,"Nominatim match: Alaska, United States"
+159,Tata TGN-Intra Asia (TGN-IA),"Vietnam, Singapore",,,,not_found,No geocoding match found for this location text.
+163,Interchange Cable Network 1 (ICN1),Vanuatu,-16.525507,168.106915,geocoded,vague,Nominatim match: Vanuatu
+164,Asia Pacific Gateway (APG),Off Malaysia,4.569375,102.265682,geocoded,vague,Nominatim match: Malaysia
+167,Alaska United East (AU-East),"Southeast Alaska, United States",,,,not_found,No geocoding match found for this location text.
+169,Maya-1.2,"Mexico, Cayman Islands",,,,not_found,No geocoding match found for this location text.
+170,Tata TGN-Intra Asia (TGN-IA),"Vietnam, Singapore",,,,not_found,No geocoding match found for this location text.
+171,Asia Africa Europe-1 (AAE-1),"Cambodia, Vietnam",,,,not_found,No geocoding match found for this location text.
+172,Asia Pacific Gateway (APG),"Vietnam, Cambodia",,,,not_found,No geocoding match found for this location text.
+175,SeaMeWe-5,"Singapore, Bangladesh",,,,not_found,No geocoding match found for this location text.
+185,Kingisepp-Kaliningrad System (Baltika),"Baltic Sea, Russia-Finland-Estonia",,,,not_found,No geocoding match found for this location text.
+186,Asia Africa Europe-1 (AAE-1),"Hong Kong, Pakistan",,,,not_found,No geocoding match found for this location text.
+187,South American Crossing (SAC),"Rio de Janeiro-Fortaleza route, Brazil",,,,not_found,No geocoding match found for this location text.
+191,Quintillion Subsea Cable Network,"Arctic Alaska, United States",,,,not_found,No geocoding match found for this location text.
+192,Coral Sea Cable System (CS�),Solomon Islands,-8.705394,159.107069,geocoded,vague,Nominatim match: Solomon Islands
+193,South America-1 (SAm-1),"Bahia, Brazil",-12.285251,-41.929478,geocoded,vague,"Nominatim match: Bahia, Região Nordeste, Brasil"
+194,SeaMeWe-3,South China Sea / Indian Ocean,,,,not_found,No geocoding match found for this location text.
+197,Asia Pacific Gateway (APG),Off Vietnam,15.926666,107.965086,geocoded,vague,Nominatim match: Việt Nam
+199,Asia Pacific Gateway (APG),"Vietnam, Hong Kong",,,,not_found,No geocoding match found for this location text.
+200,SeaMeWe-5,"Egypt, Indonesia, Pakistan",,,,not_found,No geocoding match found for this location text.
+201,SHEFA-2,"Near Orkney-Faroe, United Kingdom",,,,not_found,No geocoding match found for this location text.
+202,COGIM,Canada,61.066692,-107.991707,geocoded,vague,Nominatim match: Canada
+203,Asia Pacific Gateway (APG),"Vietnam, Singapore",,,,not_found,No geocoding match found for this location text.
+204,Kumul Domestic Submarine Cable System,Papua New Guinea,-5.681607,144.248908,geocoded,vague,Nominatim match: Papua Niugini
+205,PIPE Pacific Cable-1 (PPC-1),Papua New Guinea,-5.681607,144.248908,geocoded,vague,Nominatim match: Papua Niugini
+206,Greenland Connect,Greenland,77.619235,-42.812597,geocoded,vague,Nominatim match: Kalaallit Nunaat
+207,Asia Pacific Gateway (APG),"Vietnam, China",16.321181,111.978923,geocoded,vague,"Nominatim match: Disputes between Vietnam and China in South China Sea, 中国"
+209,Asia Africa Europe-1 (AAE-1),Egypt,26.254049,29.267547,geocoded,vague,Nominatim match: مصر
+210,SeaMeWe-5,Egypt,26.254049,29.267547,geocoded,vague,Nominatim match: مصر
+211,Coral Sea Cable System (CS�),"Papua New Guinea, Australia",,,,not_found,No geocoding match found for this location text.
+212,Bass Strait-1,"Bass Strait, Tasmania, Australia",,,,not_found,No geocoding match found for this location text.
+215,Asia Pacific Gateway (APG),"Vietnam, Hong Kong",,,,not_found,No geocoding match found for this location text.
+216,Asia Pacific Gateway (APG),Off Vietnam,15.926666,107.965086,geocoded,vague,Nominatim match: Việt Nam
+218,Asia Africa Europe-1 (AAE-1),South China Sea / Asia-Pacific,,,,not_found,No geocoding match found for this location text.
+220,Asia Africa Europe-1 (AAE-1),South China Sea / Asia-Pacific,,,,not_found,No geocoding match found for this location text.
+221,COBRAcable,"Netherlands, Denmark",,,,not_found,No geocoding match found for this location text.
+222,Eastern Africa Submarine System (EASSy),Somalia,8.367677,49.083416,geocoded,vague,Nominatim match: Soomaaliya الصومال
+223,Asia Africa Europe-1 (AAE-1),"Hong Kong, Vietnam",,,,not_found,No geocoding match found for this location text.
+224,Asia Pacific Gateway (APG),"Vietnam, Singapore",,,,not_found,No geocoding match found for this location text.
+230,Asia Pacific Gateway (APG),Off Vietnam,15.926666,107.965086,geocoded,vague,Nominatim match: Việt Nam
+231,Asia Pacific Gateway (APG),"Vietnam, Hong Kong",,,,not_found,No geocoding match found for this location text.
+236,Bharat Lanka Cable System,"India, Sri Lanka",,,,not_found,No geocoding match found for this location text.
+239,Eastern Africa Submarine System (EASSy),"Kenya, Tanzania, Rwanda",,,,not_found,No geocoding match found for this location text.
+242,Glo-1,"Nigeria, United Kingdom",,,,not_found,No geocoding match found for this location text.
