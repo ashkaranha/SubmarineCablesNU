@@ -1,14 +1,15 @@
 """Load incidents.csv and cables_shortened.csv into Postgres/pgvector.
 
 Reads the two source CSVs, builds a short text document per row, embeds each
-document with a local sentence-transformers model, and writes rows + vectors
-into the `cables` and `incidents` tables (see backend/db/schema.sql). Runs
-fully locally -- no API key or network calls needed beyond the one-time model
-download.
+document with a local fastembed (ONNX Runtime) model, and writes rows +
+vectors into the `cables` and `incidents` tables (see backend/db/schema.sql).
+Runs fully locally -- no API key or network calls needed beyond the one-time
+model download, and no PyTorch dependency (much lighter on memory than
+sentence-transformers, which matters on memory-capped hosts).
 
 Usage:
     python -m scripts.ingest_vectordb
-    python -m scripts.ingest_vectordb --database-url postgresql://... --model sentence-transformers/all-MiniLM-L6-v2
+    python -m scripts.ingest_vectordb --database-url postgresql://... --model BAAI/bge-small-en-v1.5
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from pgvector.psycopg import register_vector
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 DEFAULT_DATABASE_URL = "postgresql://cableincidents:cableincidents@localhost:5432/cableincidents"
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 EMBED_BATCH_SIZE = 64
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 
@@ -180,10 +181,10 @@ def ingest(
     skip_cables: bool = False,
     skip_incidents: bool = False,
 ) -> None:
-    from sentence_transformers import SentenceTransformer
+    from fastembed import TextEmbedding
 
     print(f"Loading embedding model {model_name}...")
-    model = SentenceTransformer(model_name)
+    model = TextEmbedding(model_name=model_name)
 
     cable_rows = build_cable_rows(data_dir)
     incident_rows = build_incident_rows(data_dir)
@@ -198,11 +199,8 @@ def ingest(
             print("Skipping cables (--skip-cables).")
         else:
             print("Embedding cables...")
-            cable_embeddings = model.encode(
-                [row["document"] for row in cable_rows],
-                batch_size=batch_size,
-                normalize_embeddings=True,
-                show_progress_bar=True,
+            cable_embeddings = list(
+                model.embed([row["document"] for row in cable_rows], batch_size=batch_size)
             )
             _write_cables(conn, cable_rows, cable_embeddings)
 
@@ -210,11 +208,8 @@ def ingest(
             print("Skipping incidents (--skip-incidents).")
         else:
             print("Embedding incidents...")
-            incident_embeddings = model.encode(
-                [row["document"] for row in incident_rows],
-                batch_size=batch_size,
-                normalize_embeddings=True,
-                show_progress_bar=True,
+            incident_embeddings = list(
+                model.embed([row["document"] for row in incident_rows], batch_size=batch_size)
             )
             _write_incidents(conn, incident_rows, incident_embeddings)
 

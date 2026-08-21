@@ -5,7 +5,7 @@ Interactive map of submarine cable incidents layered on Telegeography cable rout
 - **Frontend:** React, TypeScript, Tailwind CSS, MapLibre GL JS
 - **Backend:** FastAPI (Python)
 - **Data:** `incidents.csv`, `cables_shortened.csv`, Telegeography GeoJSON snapshot
-- **Vector DB (optional):** PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) for semantic search, with embeddings computed locally (sentence-transformers) — no API key needed
+- **Vector DB (optional):** PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) for semantic search, with embeddings computed locally ([fastembed](https://github.com/qdrant/fastembed), ONNX Runtime) — no API key needed, and much lighter on memory than a PyTorch-based model
 - **AI-found sources (optional):** Google Gemini, for suggesting additional sources on an incident
 
 `combined.xlsx` is kept as an archive only and is **not** used by the application.
@@ -93,7 +93,7 @@ Deploy `backend/` (its `Dockerfile` works as-is) to a free container host such a
 | `CABLEINCIDENTS_DATABASE_URL` | Your Supabase/Neon connection string (skip if not using semantic search) |
 | `CABLEINCIDENTS_CORS_ORIGINS` | JSON array with your deployed frontend URL, e.g. `["https://your-app.vercel.app"]` |
 
-The service listens on port 8001 (see `backend/Dockerfile`). Note that `sentence-transformers` (used for local embeddings) pulls in PyTorch, which meaningfully increases the image size and build time — expected on a free container tier, but worth knowing going in.
+The service listens on port 8001 (see `backend/Dockerfile`). Local embeddings use `fastembed` (ONNX Runtime, no PyTorch), which is intentionally chosen over `sentence-transformers` to stay well under memory-capped free tiers like Render's 512MB instance — importing PyTorch alone can eat 150-300MB before a model is even loaded.
 
 ### 3. Frontend
 
