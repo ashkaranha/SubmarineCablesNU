@@ -9,13 +9,14 @@ sentence-transformers, which matters on memory-capped hosts).
 
 Usage:
     python -m scripts.ingest_vectordb
-    python -m scripts.ingest_vectordb --database-url postgresql://... --model BAAI/bge-small-en-v1.5
+    $env:CABLEINCIDENTS_DATABASE_URL = "postgresql://..."; python -m scripts.ingest_vectordb
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import os
 from pathlib import Path
 
 import psycopg
@@ -191,7 +192,11 @@ def ingest(
     print(f"Loaded {len(cable_rows)} cables, {len(incident_rows)} incidents")
 
     print("Connecting to database...")
-    with psycopg.connect(database_url, autocommit=True) as conn:
+    # prepare_threshold=None disables psycopg's automatic server-side prepared
+    # statements -- required for Supabase's connection pooler (PgBouncer in
+    # transaction mode), which doesn't support them and errors with
+    # "prepared statement ... does not exist" after a handful of queries.
+    with psycopg.connect(database_url, autocommit=True, prepare_threshold=None) as conn:
         _apply_schema(conn)
         register_vector(conn)
 
@@ -219,7 +224,12 @@ def ingest(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
-    parser.add_argument("--database-url", default=DEFAULT_DATABASE_URL)
+    parser.add_argument(
+        "--database-url",
+        default=os.environ.get("CABLEINCIDENTS_DATABASE_URL", DEFAULT_DATABASE_URL),
+        help="Defaults to $CABLEINCIDENTS_DATABASE_URL if set, so the connection string never needs to "
+        "be typed on the command line / land in shell history.",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--batch-size", type=int, default=EMBED_BATCH_SIZE)
     parser.add_argument(

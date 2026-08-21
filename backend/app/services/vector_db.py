@@ -31,7 +31,11 @@ def get_connection() -> "psycopg.Connection":
     import psycopg
     from pgvector.psycopg import register_vector
 
-    conn = psycopg.connect(settings.database_url, autocommit=True)
+    # prepare_threshold=None disables psycopg's automatic server-side prepared
+    # statements -- required for Supabase's connection pooler (PgBouncer in
+    # transaction mode), which doesn't support them and errors with
+    # "prepared statement ... does not exist" after a handful of queries.
+    conn = psycopg.connect(settings.database_url, autocommit=True, prepare_threshold=None)
     register_vector(conn)
     return conn
 

@@ -27,6 +27,7 @@ type DateSort = 'none' | 'newest' | 'oldest'
 
 const SEMANTIC_CANDIDATE_LIMIT = 50
 const SEMANTIC_SEARCH_TIMEOUT_MS = 8000
+const SEMANTIC_PAGE_SIZE = 5
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -251,6 +252,7 @@ export function IncidentRail() {
   const [searchedCableNames, setSearchedCableNames] = useState<string[] | null>(null)
   const [dateSort, setDateSort] = useState<DateSort>('none')
   const [aggregate, setAggregate] = useState<AggregateResult | null>(null)
+  const [visibleCount, setVisibleCount] = useState(SEMANTIC_PAGE_SIZE)
 
   // Facet counts are dynamic: they reflect the currently active search/filters (each
   // facet computed with every OTHER filter applied but its own selection excluded), so
@@ -278,6 +280,12 @@ export function IncidentRail() {
     }, 200)
     return () => window.clearTimeout(timer)
   }, [searchDraft, query.q, setQuery])
+
+  // Semantic search results are capped to a "top N + Show more" view; collapse
+  // back to the top page whenever the search text or tab changes.
+  useEffect(() => {
+    setVisibleCount(SEMANTIC_PAGE_SIZE)
+  }, [query.q, listMode])
 
   useEffect(() => {
     let cancelled = false
@@ -388,27 +396,42 @@ export function IncidentRail() {
     ? allCables.filter((cable) => matchingCableNames.has(cable.name))
     : allCables
 
-  let displayedCables: CableSummary[]
-  if (isSearching && searchedCableNames) {
+  const isCableSemanticActive = Boolean(isSearching && searchedCableNames)
+
+  let matchedCables: CableSummary[]
+  if (isCableSemanticActive) {
     const byName = new Map(facetFilteredCables.map((cable) => [cable.name, cable]))
-    displayedCables = searchedCableNames
+    matchedCables = searchedCableNames!
       .map((name) => byName.get(name))
       .filter((cable): cable is CableSummary => Boolean(cable))
   } else if (isSearching && cableSemanticUnavailable) {
     const needle = searchDraft.trim().toLowerCase()
-    displayedCables = facetFilteredCables.filter(
+    matchedCables = facetFilteredCables.filter(
       (cable) =>
         cable.name.toLowerCase().includes(needle) ||
         (cable.owners ?? '').toLowerCase().includes(needle),
     )
   } else {
-    displayedCables = facetFilteredCables
+    matchedCables = facetFilteredCables
   }
+
+  // Only cap the semantically-ranked results — the total match count (used in
+  // the header below) always reflects the full, uncapped list.
+  const displayedCables = isCableSemanticActive ? matchedCables.slice(0, visibleCount) : matchedCables
+  const hasMoreCables = isCableSemanticActive && matchedCables.length > visibleCount
 
   const openDropdownHandler = (key: DropdownKey) => (open: boolean) =>
     setOpenDropdown(open ? key : null)
 
-  const sortedIncidents = sortIncidentsByDate(filteredIncidents, dateSort)
+  const isIncidentSemanticActive = semanticScores !== null
+  // Only cap the semantically-ranked results — filteredIncidents (already
+  // relevance-ordered by the backend) is sliced before date-sorting so "top N
+  // most relevant" stays meaningful even if the user re-sorts by date.
+  const cappedIncidents = isIncidentSemanticActive
+    ? filteredIncidents.slice(0, visibleCount)
+    : filteredIncidents
+  const hasMoreIncidents = isIncidentSemanticActive && filteredIncidents.length > visibleCount
+  const sortedIncidents = sortIncidentsByDate(cappedIncidents, dateSort)
 
   return (
     <aside className="pointer-events-auto absolute bottom-0 left-0 top-0 z-20 flex w-[340px] flex-col border-r border-[var(--border)] bg-[var(--surface)]">
@@ -605,7 +628,7 @@ export function IncidentRail() {
           {listMode === 'cables'
             ? cablesLoading
               ? 'Loading…'
-              : `${displayedCables.length} cable${displayedCables.length === 1 ? '' : 's'} found`
+              : `${matchedCables.length} cable${matchedCables.length === 1 ? '' : 's'} found`
             : queryLoading
               ? 'Loading…'
               : `${resultCount} incident${resultCount === 1 ? '' : 's'} found`}
@@ -682,6 +705,15 @@ export function IncidentRail() {
                 )
               })}
             </ul>
+          )}
+          {hasMoreCables && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((count) => count + SEMANTIC_PAGE_SIZE)}
+              className="w-full border-t border-[var(--border)] px-4 py-2.5 text-xs font-medium text-[var(--muted)] hover:bg-[var(--bg)] hover:text-[var(--text)]"
+            >
+              Show more ({matchedCables.length - displayedCables.length} remaining)
+            </button>
           )}
         </div>
       ) : (
@@ -769,6 +801,15 @@ export function IncidentRail() {
                 )
               })}
             </ul>
+          )}
+          {hasMoreIncidents && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((count) => count + SEMANTIC_PAGE_SIZE)}
+              className="w-full border-t border-[var(--border)] px-4 py-2.5 text-xs font-medium text-[var(--muted)] hover:bg-[var(--bg)] hover:text-[var(--text)]"
+            >
+              Show more ({filteredIncidents.length - sortedIncidents.length} remaining)
+            </button>
           )}
         </div>
       )}
