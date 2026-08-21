@@ -14,7 +14,7 @@ from app.models.schemas import (
     IncidentSummary,
     SearchResponse,
 )
-from app.services import vector_db
+from app.services import reranker, vector_db
 from app.services.data_loader import DataStore
 from app.services.embeddings import embed_text
 from app.services.search_intent import classify_query
@@ -24,8 +24,16 @@ router = APIRouter(prefix="/api/v1")
 
 # Cosine similarity below this is treated as "not actually related" and dropped from
 # semantic search results, so an off-topic query returns few/no matches instead of
-# padding out to `limit` with the least-bad nearest neighbors in the corpus.
-MIN_SEMANTIC_SCORE = 0.5
+# padding out to `limit` with the least-bad nearest neighbors in the corpus. This is
+# now just a loose floor on the initial candidate pool -- the cross-encoder reranker
+# (see app/services/reranker.py) does the real relevance filtering, since bi-encoder
+# cosine similarity alone doesn't separate genuinely relevant results from unrelated
+# ones well enough on these short, formulaic documents.
+MIN_SEMANTIC_SCORE = 0.3
+
+# How many nearest-neighbor candidates to pull from the vector DB before reranking.
+# Wider than what's ultimately shown so the cross-encoder has enough to work with.
+CANDIDATE_POOL_SIZE = 40
 
 
 def _split_csv_param(values: list[str] | None) -> list[str]:
@@ -173,17 +181,21 @@ def create_router(store: DataStore) -> APIRouter:
         cables: list[CableSearchResult] = []
         try:
             if search_type in ("all", "incidents"):
-                incidents = [
-                    IncidentSearchResult(**row)
-                    for row in vector_db.search_incidents(embedding, limit)
+                pool = [
+                    row
+                    for row in vector_db.search_incidents(embedding, CANDIDATE_POOL_SIZE)
                     if row["score"] >= min_score
                 ]
+                ranked = reranker.rerank_incidents(q, pool)
+                incidents = [IncidentSearchResult(**row) for row in ranked[:limit]]
             if search_type in ("all", "cables"):
-                cables = [
-                    CableSearchResult(**row)
-                    for row in vector_db.search_cables(embedding, limit)
+                pool = [
+                    row
+                    for row in vector_db.search_cables(embedding, CANDIDATE_POOL_SIZE)
                     if row["score"] >= min_score
                 ]
+                ranked = reranker.rerank_cables(q, pool)
+                cables = [CableSearchResult(**row) for row in ranked[:limit]]
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"Vector database unavailable: {exc}") from exc
 
