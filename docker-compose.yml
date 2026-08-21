@@ -23,10 +23,11 @@ services:
       - "8001:8001"
     volumes:
       - ./data:/data
-      - hf_cache:/root/.cache/huggingface
+      - fastembed_cache:/root/.cache/fastembed_cache
     environment:
       CABLEINCIDENTS_DATA_DIR: /data
       CABLEINCIDENTS_DATABASE_URL: postgresql://cableincidents:cableincidents@db:5432/cableincidents
+      FASTEMBED_CACHE_PATH: /root/.cache/fastembed_cache
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     depends_on:
       db:
@@ -43,4 +44,4 @@ services:
 
 volumes:
   pgvector_data:
-  hf_cache:
+  fastembed_cache:
