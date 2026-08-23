@@ -26,4 +26,8 @@ jobs:
           GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
         run: |
           git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/nusubmarinecables-group/SubmarineCablesNU.git"
-          git push gitlab "${{ github.ref_name }}"
+          # Force-push is required for a one-way GitHub -> GitLab mirror.
+          # GitLab MRs create extra merge commits on the same branch, which
+          # makes a regular push fail with "fetch first" even when GitHub
+          # already has the newer file contents.
+          git push --force gitlab "${{ github.ref_name }}"
