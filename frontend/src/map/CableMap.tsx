@@ -31,18 +31,21 @@ interface MapInteractionHandlers {
   locationGroupsRef: MutableRefObject<Map<string, string[]>>
 }
 
-function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
-  const tiles =
-    theme === 'dark'
-      ? ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png']
-      : ['https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png']
+const DARK_BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/dark'
 
+function rasterBasemapStyle(theme: 'light' | 'dark'): StyleSpecification {
+  const dark = theme === 'dark'
   return {
     version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     sources: {
       basemap: {
         type: 'raster',
-        tiles,
+        tiles: [
+          dark
+            ? 'https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
+            : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        ],
         tileSize: 256,
         attribution: '&copy; OpenStreetMap &copy; CARTO',
       },
@@ -52,7 +55,7 @@ function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
         id: 'background',
         type: 'background',
         paint: {
-          'background-color': theme === 'dark' ? '#0b0b0b' : '#f2f2f0',
+          'background-color': dark ? '#0b0b0b' : '#f2f2f0',
         },
       },
       {
@@ -61,6 +64,29 @@ function basemapStyle(theme: 'light' | 'dark'): StyleSpecification {
         source: 'basemap',
       },
     ],
+  }
+}
+
+function basemapStyle(theme: 'light' | 'dark'): StyleSpecification | string {
+  return theme === 'dark' ? DARK_BASEMAP_STYLE : rasterBasemapStyle('light')
+}
+
+function emphasizeDarkMapLabels(map: maplibregl.Map) {
+  const style = map.getStyle()
+  if (!style?.layers) {
+    return
+  }
+  for (const layer of style.layers) {
+    if (layer.type !== 'symbol' || layer.id.startsWith('incident-')) {
+      continue
+    }
+    try {
+      map.setPaintProperty(layer.id, 'text-color', '#ffffff')
+      map.setPaintProperty(layer.id, 'text-halo-color', '#111111')
+      map.setPaintProperty(layer.id, 'text-halo-width', 1.15)
+    } catch {
+      // Some style layers reject paint overrides; skip those.
+    }
   }
 }
 
@@ -342,7 +368,7 @@ function addMapLayers(
   locationGroupsRef: MutableRefObject<Map<string, string[]>>,
   theme: 'light' | 'dark',
 ) {
-  if (map.getSource('cables')) {
+  if (map.getSource('cables') && map.getLayer('cables-line')) {
     const cables = map.getSource('cables') as maplibregl.GeoJSONSource
     cables.setData(cableGeoJson)
     const incidents = map.getSource('incidents') as maplibregl.GeoJSONSource
@@ -362,7 +388,18 @@ function addMapLayers(
     return
   }
 
-  map.addSource('cables', { type: 'geojson', data: cableGeoJson })
+  if (map.getSource('cables') && !map.getLayer('cables-line')) {
+    if (map.getSource('incidents')) {
+      map.removeSource('incidents')
+    }
+    map.removeSource('cables')
+  }
+
+  const cableData: FeatureCollection = {
+    type: 'FeatureCollection',
+    features: cableGeoJson.features ?? [],
+  }
+  map.addSource('cables', { type: 'geojson', data: cableData })
   map.addLayer({
     id: 'cables-line',
     type: 'line',
@@ -390,6 +427,9 @@ function addMapLayers(
     cluster: true,
     clusterMaxZoom: 8,
     clusterRadius: 45,
+    clusterProperties: {
+      incident_count: ['+', ['get', 'count']],
+    },
   })
   map.addLayer({
     id: 'incident-clusters',
@@ -398,7 +438,7 @@ function addMapLayers(
     filter: ['has', 'point_count'],
     paint: {
       'circle-color': '#374151',
-      'circle-radius': ['step', ['get', 'point_count'], 16, 5, 20, 15, 24],
+      'circle-radius': ['step', ['coalesce', ['get', 'incident_count'], ['get', 'point_count']], 16, 8, 20, 20, 24],
       'circle-stroke-width': 2,
       'circle-stroke-color': '#ffffff',
     },
@@ -409,7 +449,7 @@ function addMapLayers(
     source: 'incidents',
     filter: ['has', 'point_count'],
     layout: {
-      'text-field': ['get', 'point_count_abbreviated'],
+      'text-field': ['to-string', ['coalesce', ['get', 'incident_count'], ['get', 'point_count']]],
       'text-size': 12,
       'text-allow-overlap': true,
     },
@@ -464,7 +504,7 @@ function addMapLayers(
     source: 'incidents',
     filter: ['!', ['has', 'point_count']],
     layout: {
-      'text-field': ['case', ['>', ['get', 'count'], 1], ['to-string', ['get', 'count']], '!'],
+      'text-field': ['to-string', ['get', 'count']],
       'text-size': 16,
       'text-allow-overlap': true,
       'text-ignore-placement': true,
@@ -579,11 +619,12 @@ export function CableMap() {
 
         map = new maplibregl.Map({
           container: containerRef.current,
-          style: basemapStyle(useUiStore.getState().theme),
+          style: rasterBasemapStyle(useUiStore.getState().theme),
           center: [20, 20],
           zoom: 1.8,
-          attributionControl: { compact: true },
+          attributionControl: false,
         })
+        map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left')
         mapRef.current = map
 
         map.on('error', (event) => {
@@ -591,8 +632,26 @@ export function CableMap() {
         })
 
         map.on('load', () => {
-          setupMapContent(map!)
-          hasLoadedRef.current = true
+          const theme = useUiStore.getState().theme
+          const finishSetup = () => {
+            try {
+              if (useUiStore.getState().theme === 'dark') {
+                emphasizeDarkMapLabels(map!)
+              }
+              setupMapContent(map!)
+              hasLoadedRef.current = true
+            } catch (error) {
+              console.error(error)
+              setStatus('error')
+              setErrorMessage(error instanceof Error ? error.message : 'Failed to add map layers')
+            }
+          }
+          if (theme === 'dark') {
+            map!.once('style.load', finishSetup)
+            map!.setStyle(DARK_BASEMAP_STYLE)
+            return
+          }
+          finishSetup()
         })
 
         requestAnimationFrame(() => {
@@ -665,31 +724,45 @@ export function CableMap() {
       return
     }
 
-    map.setStyle(basemapStyle(theme))
-    map.once('style.load', () => {
+    let applied = false
+    const applyOverlays = () => {
+      if (applied) {
+        return
+      }
+      applied = true
       interactionsBoundRef.current = false
       const cableGeoJson = cableGeoJsonRef.current
       if (!cableGeoJson) {
         return
       }
-      const state = useUiStore.getState()
-      addMapLayers(
-        map,
-        cableGeoJson,
-        state.filteredMarkers,
-        state.selectedIncidentId,
-        state.selectedGroupIncidentIds,
-        locationGroupsRef,
-        state.theme,
-      )
-      bindMapInteractions(map, interactionHandlers, interactionsBoundRef)
-      applyCableVisibilityFilter(
-        map,
-        state.hideQuietCables,
-        uniqueCableNames(state.filteredIncidents),
-      )
-      map.resize()
-    })
+      try {
+        if (theme === 'dark') {
+          emphasizeDarkMapLabels(map)
+        }
+        const state = useUiStore.getState()
+        addMapLayers(
+          map,
+          cableGeoJson,
+          state.filteredMarkers,
+          state.selectedIncidentId,
+          state.selectedGroupIncidentIds,
+          locationGroupsRef,
+          state.theme,
+        )
+        bindMapInteractions(map, interactionHandlers, interactionsBoundRef)
+        applyCableVisibilityFilter(
+          map,
+          state.hideQuietCables,
+          uniqueCableNames(state.filteredIncidents),
+        )
+        map.resize()
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    map.once('style.load', applyOverlays)
+    map.setStyle(basemapStyle(theme))
   }, [theme])
 
   useEffect(() => {

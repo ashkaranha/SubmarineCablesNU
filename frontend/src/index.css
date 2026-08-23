@@ -8,6 +8,9 @@
   --muted: #5c5c5c;
   --border: #d9d9d4;
   --shadow: rgba(0, 0, 0, 0.08);
+  --accent: #4e2a84;
+  --accent-hover: #401f68;
+  --on-accent: #ffffff;
 }
 
 :root.dark {
@@ -17,6 +20,9 @@
   --muted: #a8a8a8;
   --border: #333333;
   --shadow: rgba(0, 0, 0, 0.35);
+  --accent: #836eaa;
+  --accent-hover: #9b87c0;
+  --on-accent: #ffffff;
 }
 
 * {
@@ -47,4 +53,49 @@ body {
 
 .maplibregl-popup-tip {
   display: none;
+}
+
+.maplibregl-ctrl-bottom-left {
+  margin-left: 8px;
+}
+
+.panel-type[data-panel-size='sm'] {
+  --panel-title: 1rem;
+  --panel-body: 0.8rem;
+  --panel-label: 0.7rem;
+}
+
+.panel-type[data-panel-size='md'] {
+  --panel-title: 1.125rem;
+  --panel-body: 0.875rem;
+  --panel-label: 0.75rem;
+}
+
+.panel-type[data-panel-size='lg'] {
+  --panel-title: 1.35rem;
+  --panel-body: 1.05rem;
+  --panel-label: 0.85rem;
+}
+
+.panel-type h2 {
+  font-size: var(--panel-title);
+}
+
+.panel-type .text-lg {
+  font-size: var(--panel-title);
+}
+
+.panel-type .text-sm,
+.panel-type dd {
+  font-size: var(--panel-body);
+}
+
+.panel-type .text-xs,
+.panel-type .text-\[10px\],
+.panel-type dt {
+  font-size: var(--panel-label);
+}
+
+.panel-type[data-panel-bold='true'] dd {
+  font-weight: 650;
 }
