@@ -9,8 +9,7 @@ name: Mirror to GitLab
 on:
   push:
     branches:
-      - main
-      - production
+      - development
 
 jobs:
   mirror:
@@ -27,7 +26,7 @@ jobs:
         run: |
           git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/nusubmarinecables-group/SubmarineCablesNU.git"
           # Force-push is required for a one-way GitHub -> GitLab mirror.
-          # GitLab MRs create extra merge commits on the same branch, which
-          # makes a regular push fail with "fetch first" even when GitHub
-          # already has the newer file contents.
-          git push --force gitlab "${{ github.ref_name }}"
+          # Only `development` is mirrored (the working branch). Merge into
+          # `main` yourself when you want a deploy -- GitLab protects `main`
+          # and rejects force-pushes there.
+          git push --force gitlab development
