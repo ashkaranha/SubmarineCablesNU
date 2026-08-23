@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
 import { fetchIncident } from '../api/client'
-import { useUiStore } from '../store/uiStore'
+import { useUiStore, type PanelTextSize } from '../store/uiStore'
 import type { IncidentSummary } from '../types/api'
 import { CableView } from './CableView'
 import { IncidentView } from './IncidentView'
+
+const TEXT_SIZES: PanelTextSize[] = ['sm', 'md', 'lg']
 
 export function BottomPanel() {
   const panelMode = useUiStore((state) => state.panelMode)
@@ -12,6 +14,10 @@ export function BottomPanel() {
   const groupIncidents = useUiStore((state) => state.groupIncidents)
   const closePanel = useUiStore((state) => state.closePanel)
   const openIncidentPanel = useUiStore((state) => state.openIncidentPanel)
+  const panelTextSize = useUiStore((state) => state.panelTextSize)
+  const panelTextBold = useUiStore((state) => state.panelTextBold)
+  const setPanelTextSize = useUiStore((state) => state.setPanelTextSize)
+  const setPanelTextBold = useUiStore((state) => state.setPanelTextBold)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -49,18 +55,51 @@ export function BottomPanel() {
           <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]">
             {panelMode === 'cable' ? 'Cable' : panelMode === 'group' ? 'Incidents' : 'Incident'}
           </p>
-          <button
-            type="button"
-            onClick={closePanel}
-            className="border border-[var(--border)] px-3 py-1 text-sm text-[var(--muted)] hover:text-[var(--text)]"
-            aria-label="Close panel"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex border border-[var(--border)]" role="group" aria-label="Text size">
+              {TEXT_SIZES.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => setPanelTextSize(size)}
+                  className={`px-2 py-1 text-xs font-medium uppercase ${
+                    panelTextSize === size
+                      ? 'bg-[var(--accent)] text-[var(--on-accent)]'
+                      : 'text-[var(--muted)] hover:text-[var(--text)]'
+                  }`}
+                  aria-pressed={panelTextSize === size}
+                >
+                  {size === 'sm' ? 'S' : size === 'md' ? 'M' : 'L'}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPanelTextBold(!panelTextBold)}
+              className={`border px-2 py-1 text-xs font-semibold ${
+                panelTextBold
+                  ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)]'
+                  : 'border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]'
+              }`}
+              aria-pressed={panelTextBold}
+            >
+              Bold
+            </button>
+            <button
+              type="button"
+              onClick={closePanel}
+              className="border border-[var(--border)] px-3 py-1 text-sm text-[var(--muted)] hover:text-[var(--text)]"
+              aria-label="Close panel"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+          className="panel-type min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+          data-panel-size={panelTextSize}
+          data-panel-bold={panelTextBold ? 'true' : 'false'}
           onWheel={(event) => event.stopPropagation()}
         >
           {panelMode === 'cable' && cableDetail && (

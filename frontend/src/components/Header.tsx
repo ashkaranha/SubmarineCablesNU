@@ -23,7 +23,7 @@ export function Header() {
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between p-4 pl-[356px]">
       <div className="pointer-events-auto">
-        <h1 className="text-sm font-semibold tracking-wide text-[var(--text)]">CableIncidentsDB</h1>
+        <h1 className="text-sm font-semibold tracking-wide text-[var(--accent)]">CableIncidentsDB</h1>
         <p className="mt-0.5 text-xs text-[var(--muted)]">
           {resultCount} shown
           {filterBits.length > 0 ? ` · ${filterBits.join(' · ')}` : ''}
@@ -32,7 +32,7 @@ export function Header() {
       <button
         type="button"
         onClick={toggleTheme}
-        className="pointer-events-auto border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] shadow-sm"
+        className="pointer-events-auto border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] shadow-sm outline-none focus-visible:border-[var(--accent)]"
         aria-label="Toggle color theme"
       >
         {theme === 'light' ? '☾' : '☀'}

@@ -16,8 +16,12 @@ interface FlyTarget {
   longitude: number
 }
 
+export type PanelTextSize = 'sm' | 'md' | 'lg'
+
 interface UiState {
   theme: 'light' | 'dark'
+  panelTextSize: PanelTextSize
+  panelTextBold: boolean
   panelMode: PanelMode
   selectedCableName: string | null
   selectedIncidentId: string | null
@@ -36,6 +40,8 @@ interface UiState {
   queryLoading: boolean
   setTheme: (theme: 'light' | 'dark') => void
   toggleTheme: () => void
+  setPanelTextSize: (size: PanelTextSize) => void
+  setPanelTextBold: (bold: boolean) => void
   toggleHideQuietCables: () => void
   requestFitBounds: () => void
   clearFitBoundsRequest: () => void
@@ -59,6 +65,8 @@ interface UiState {
 
 const THEME_KEY = 'cableincidents-theme'
 const HIDE_QUIET_KEY = 'cableincidents-hide-quiet-cables'
+const PANEL_SIZE_KEY = 'cableincidents-panel-text-size'
+const PANEL_BOLD_KEY = 'cableincidents-panel-text-bold'
 
 const emptyQuery: IncidentQuery = {
   q: '',
@@ -72,6 +80,15 @@ const emptyQuery: IncidentQuery = {
 function readTheme(): 'light' | 'dark' {
   const stored = localStorage.getItem(THEME_KEY)
   return stored === 'dark' ? 'dark' : 'light'
+}
+
+function readPanelTextSize(): PanelTextSize {
+  const stored = localStorage.getItem(PANEL_SIZE_KEY)
+  return stored === 'sm' || stored === 'lg' ? stored : 'md'
+}
+
+function readPanelTextBold(): boolean {
+  return localStorage.getItem(PANEL_BOLD_KEY) === 'true'
 }
 
 function readHideQuietCables(): boolean {
@@ -88,6 +105,8 @@ function toggleInList<T>(list: T[], value: T): T[] {
 
 export const useUiStore = create<UiState>((set, get) => ({
   theme: readTheme(),
+  panelTextSize: readPanelTextSize(),
+  panelTextBold: readPanelTextBold(),
   panelMode: 'closed',
   selectedCableName: null,
   selectedIncidentId: null,
@@ -112,6 +131,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   toggleTheme: () => {
     const next = get().theme === 'light' ? 'dark' : 'light'
     get().setTheme(next)
+  },
+  setPanelTextSize: (size) => {
+    localStorage.setItem(PANEL_SIZE_KEY, size)
+    set({ panelTextSize: size })
+  },
+  setPanelTextBold: (bold) => {
+    localStorage.setItem(PANEL_BOLD_KEY, String(bold))
+    set({ panelTextBold: bold })
   },
   toggleHideQuietCables: () => {
     const next = !get().hideQuietCables

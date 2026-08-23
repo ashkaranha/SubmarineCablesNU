@@ -436,7 +436,8 @@ export function IncidentRail() {
   return (
     <aside className="pointer-events-auto absolute bottom-0 left-0 top-0 z-20 flex w-[340px] flex-col border-r border-[var(--border)] bg-[var(--surface)]">
       <div className="border-b border-[var(--border)] px-4 pb-3 pt-14">
-        <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-semibold tracking-wide text-[var(--accent)]">Northwestern</p>
+        <div className="mt-2 flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold">{listMode === 'cables' ? 'Cables' : 'Incidents'}</h2>
         </div>
 
@@ -455,7 +456,7 @@ export function IncidentRail() {
             onClick={() => setListMode('incidents')}
             className={`flex-1 px-2 py-1.5 font-medium ${
               listMode === 'incidents'
-                ? 'bg-[var(--text)] text-[var(--surface)]'
+                ? 'bg-[var(--accent)] text-[var(--on-accent)]'
                 : 'text-[var(--muted)] hover:text-[var(--text)]'
             }`}
           >
@@ -466,7 +467,7 @@ export function IncidentRail() {
             onClick={() => setListMode('cables')}
             className={`flex-1 px-2 py-1.5 font-medium ${
               listMode === 'cables'
-                ? 'bg-[var(--text)] text-[var(--surface)]'
+                ? 'bg-[var(--accent)] text-[var(--on-accent)]'
                 : 'text-[var(--muted)] hover:text-[var(--text)]'
             }`}
           >
@@ -479,7 +480,7 @@ export function IncidentRail() {
           value={searchDraft}
           onChange={(event) => setSearchDraft(event.target.value)}
           placeholder={listMode === 'cables' ? 'Search or describe a cable…' : 'Search or describe an incident…'}
-          className="mt-3 w-full border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--text)]"
+          className="mt-3 w-full border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted)] focus:border-[var(--accent)]"
         />
         {!isSearching ? (
           <p className="mt-1 text-[11px] text-[var(--muted)]">
