@@ -71,6 +71,28 @@ function basemapStyle(theme: 'light' | 'dark'): StyleSpecification | string {
   return theme === 'dark' ? DARK_BASEMAP_STYLE : rasterBasemapStyle('light')
 }
 
+// The dark style is a full vector style fetched from openfreemap.org, unlike the
+// light/raster styles which are built locally and never touch the network for the
+// style document itself. If that fetch fails (offline, blocked, host down), MapLibre
+// never fires 'style.load', so callers waiting on it to bind the incident/cable
+// layers would otherwise hang forever with a map that looks "stuck". Fall back to
+// the local raster dark style, which needs no remote style document.
+function setStyleWithFallback(map: maplibregl.Map, style: StyleSpecification | string, onReady: () => void) {
+  const onLoad = () => {
+    map.off('error', onError)
+    onReady()
+  }
+  const onError = (event: { error?: unknown }) => {
+    map.off('style.load', onLoad)
+    console.error('Failed to load map style, falling back to local raster style', event.error)
+    map.once('style.load', onReady)
+    map.setStyle(rasterBasemapStyle('dark'))
+  }
+  map.once('style.load', onLoad)
+  map.once('error', onError)
+  map.setStyle(style)
+}
+
 function emphasizeDarkMapLabels(map: maplibregl.Map) {
   const style = map.getStyle()
   if (!style?.layers) {
@@ -647,8 +669,7 @@ export function CableMap() {
             }
           }
           if (theme === 'dark') {
-            map!.once('style.load', finishSetup)
-            map!.setStyle(DARK_BASEMAP_STYLE)
+            setStyleWithFallback(map!, DARK_BASEMAP_STYLE, finishSetup)
             return
           }
           finishSetup()
@@ -761,8 +782,7 @@ export function CableMap() {
       }
     }
 
-    map.once('style.load', applyOverlays)
-    map.setStyle(basemapStyle(theme))
+    setStyleWithFallback(map, basemapStyle(theme), applyOverlays)
   }, [theme])
 
   useEffect(() => {
