@@ -76,6 +76,7 @@ function basemapStyle(theme: 'light' | 'dark'): string {
 function setStyleWithFallback(map: maplibregl.Map, style: StyleSpecification | string, theme: 'light' | 'dark', onReady: () => void) {
   const onLoad = () => {
     map.off('error', onError)
+    forceEnglishLabels(map)
     onReady()
   }
   const onError = (event: { error?: unknown }) => {
@@ -87,6 +88,41 @@ function setStyleWithFallback(map: maplibregl.Map, style: StyleSpecification | s
   map.once('style.load', onLoad)
   map.once('error', onError)
   map.setStyle(style)
+}
+
+// OpenFreeMap's default styles label places with a two-line
+// "{name:latin}\n{name}" field -- an English/transliterated line plus the
+// local-script name stacked underneath (OpenMapTiles convention). That
+// doubles label height/width, which is why country names were spilling past
+// their borders. Force every place label to a single English line instead.
+function forceEnglishLabels(map: maplibregl.Map) {
+  const style = map.getStyle()
+  if (!style?.layers) {
+    return
+  }
+  for (const layer of style.layers) {
+    if (layer.type !== 'symbol') {
+      continue
+    }
+    const textField = (layer.layout as Record<string, unknown> | undefined)?.['text-field']
+    if (!textField) {
+      continue
+    }
+    const textFieldRaw = typeof textField === 'string' ? textField : JSON.stringify(textField)
+    if (!textFieldRaw.includes('name')) {
+      continue
+    }
+    try {
+      map.setLayoutProperty(layer.id, 'text-field', [
+        'coalesce',
+        ['get', 'name:en'],
+        ['get', 'name:latin'],
+        ['get', 'name'],
+      ])
+    } catch {
+      // Some style layers reject layout overrides; skip those.
+    }
+  }
 }
 
 function emphasizeDarkMapLabels(map: maplibregl.Map) {
