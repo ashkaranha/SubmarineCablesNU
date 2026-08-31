@@ -31,44 +31,62 @@ interface MapInteractionHandlers {
   locationGroupsRef: MutableRefObject<Map<string, string[]>>
 }
 
-const DARK_BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/dark'
+// OpenFreeMap's hosted vector styles: free, no API key, no request quota
+// (unlike CARTO's basemaps.cartocdn.com raster tiles, which now require a
+// paid API key and serve "API KEY REQUIRED" watermarked placeholder tiles
+// for anonymous requests -- that's what a plain CARTO raster style silently
+// degrades into).
+const REMOTE_BASEMAP_STYLE: Record<'light' | 'dark', string> = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+}
 
-function rasterBasemapStyle(theme: 'light' | 'dark'): StyleSpecification {
-  const dark = theme === 'dark'
+// Fully local: no tile source, no remote style document, so it can never fail
+// or hang. Used as the map's initial style (painted before any network
+// request completes) and as the last-resort fallback if OpenFreeMap itself
+// is unreachable -- a plain background is a better failure mode than a
+// broken/watermarked basemap.
+function blankBackgroundStyle(theme: 'light' | 'dark'): StyleSpecification {
   return {
     version: 8,
     glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-    sources: {
-      basemap: {
-        type: 'raster',
-        tiles: [
-          dark
-            ? 'https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
-            : 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        ],
-        tileSize: 256,
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-      },
-    },
+    sources: {},
     layers: [
       {
         id: 'background',
         type: 'background',
         paint: {
-          'background-color': dark ? '#0b0b0b' : '#f2f2f0',
+          'background-color': theme === 'dark' ? '#0b0b0b' : '#f2f2f0',
         },
-      },
-      {
-        id: 'basemap',
-        type: 'raster',
-        source: 'basemap',
       },
     ],
   }
 }
 
-function basemapStyle(theme: 'light' | 'dark'): StyleSpecification | string {
-  return theme === 'dark' ? DARK_BASEMAP_STYLE : rasterBasemapStyle('light')
+function basemapStyle(theme: 'light' | 'dark'): string {
+  return REMOTE_BASEMAP_STYLE[theme]
+}
+
+// The basemap style is a full vector style fetched from openfreemap.org. If
+// that fetch fails (offline, blocked, host down), MapLibre never fires
+// 'style.load', so callers waiting on it to bind the incident/cable layers
+// would otherwise hang forever with a map that looks "stuck". Fall back to
+// a local, tile-free background instead, which needs no remote style document
+// and so can't itself fail.
+function setStyleWithFallback(map: maplibregl.Map, style: StyleSpecification | string, theme: 'light' | 'dark', onReady: () => void) {
+  const onLoad = () => {
+    map.off('error', onError)
+    onReady()
+  }
+  const onError = (event: { error?: unknown }) => {
+    map.off('style.load', onLoad)
+    console.error('Failed to load map style, falling back to blank background', event.error)
+    map.once('style.load', onReady)
+    map.setStyle(blankBackgroundStyle(theme))
+  }
+  map.once('style.load', onLoad)
+  map.once('error', onError)
+  map.setStyle(style)
 }
 
 function emphasizeDarkMapLabels(map: maplibregl.Map) {
@@ -619,7 +637,7 @@ export function CableMap() {
 
         map = new maplibregl.Map({
           container: containerRef.current,
-          style: rasterBasemapStyle(useUiStore.getState().theme),
+          style: blankBackgroundStyle(useUiStore.getState().theme),
           center: [20, 20],
           zoom: 1.8,
           attributionControl: false,
@@ -646,12 +664,7 @@ export function CableMap() {
               setErrorMessage(error instanceof Error ? error.message : 'Failed to add map layers')
             }
           }
-          if (theme === 'dark') {
-            map!.once('style.load', finishSetup)
-            map!.setStyle(DARK_BASEMAP_STYLE)
-            return
-          }
-          finishSetup()
+          setStyleWithFallback(map!, REMOTE_BASEMAP_STYLE[theme], theme, finishSetup)
         })
 
         requestAnimationFrame(() => {
@@ -761,8 +774,7 @@ export function CableMap() {
       }
     }
 
-    map.once('style.load', applyOverlays)
-    map.setStyle(basemapStyle(theme))
+    setStyleWithFallback(map, basemapStyle(theme), theme, applyOverlays)
   }, [theme])
 
   useEffect(() => {
