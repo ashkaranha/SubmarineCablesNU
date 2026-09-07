@@ -447,7 +447,7 @@ def load_data_store(data_dir: Path | None = None) -> DataStore:
         investigation_status = classify_investigation_status(status)
         marker_fill = marker_fill_for(actor_tier)
         stroke = status_stroke_for(status)
-        badge_color = badge_color_for(actor_tier, status)
+        badge_color = badge_color_for(actor_tier)
         resolved = is_resolved_status(status)
 
         latitude = _parse_float(row.get("Latitude"))

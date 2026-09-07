@@ -135,9 +135,9 @@ def status_stroke_for(status: str | None) -> StatusStroke:
     return "resolved" if is_resolved_status(status) else "unresolved"
 
 
-def badge_color_for(actor_tier: ActorTier, status: str | None) -> BadgeColor:
-    if is_resolved_status(status):
-        return "green"
+def badge_color_for(actor_tier: ActorTier) -> BadgeColor:
     if actor_tier == "confirmed":
         return "red"
-    return "yellow"
+    if actor_tier == "suspected":
+        return "yellow"
+    return "green"

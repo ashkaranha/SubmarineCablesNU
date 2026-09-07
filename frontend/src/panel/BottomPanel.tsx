@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { fetchIncident } from '../api/client'
+import { IncidentMarkerDot } from '../map/IncidentMarkerDot'
 import { useUiStore, type PanelTextSize } from '../store/uiStore'
 import type { IncidentSummary } from '../types/api'
 import { CableView } from './CableView'
@@ -122,15 +123,22 @@ export function BottomPanel() {
                     key={incident.id}
                     type="button"
                     onClick={() => void handleSelectGroupedIncident(incident.id)}
-                    className="flex w-full items-center justify-between border border-[var(--border)] bg-[var(--bg)] px-3 py-3 text-left hover:border-[var(--text)]"
+                    className="flex w-full items-center gap-3 border border-[var(--border)] bg-[var(--bg)] px-3 py-3 text-left hover:border-[var(--text)]"
                   >
-                    <div>
+                    <IncidentMarkerDot
+                      marker_fill={incident.marker_fill}
+                      status_stroke={incident.status_stroke}
+                      actor_tier={incident.actor_tier}
+                      status={incident.status}
+                      size="md"
+                    />
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{incident.original_cable_name}</p>
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         {incident.date} · {incident.region}
                       </p>
                     </div>
-                    <span className="text-xs text-[var(--muted)]">{incident.status || '—'}</span>
+                    <span className="shrink-0 text-xs text-[var(--muted)]">{incident.status || '—'}</span>
                   </button>
                 ))}
               </div>
