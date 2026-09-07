@@ -89,6 +89,9 @@ export function CableView({ cable, onSelectIncident }: CableViewProps) {
           Incidents on this cable
         </h3>
         <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+          {cable.incidents.length === 0 && (
+            <p className="text-sm text-[var(--muted)]">No recorded incidents on this cable.</p>
+          )}
           {cable.incidents.map((incident) => (
             <button
               key={incident.id}

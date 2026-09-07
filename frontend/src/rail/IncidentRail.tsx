@@ -9,7 +9,7 @@ import {
   fetchSemanticSearch,
 } from '../api/client'
 import { FilterDropdown } from './FilterDropdown'
-import { useUiStore } from '../store/uiStore'
+import { useUiStore, type ListMode } from '../store/uiStore'
 import type {
   ActorTier,
   AggregateResult,
@@ -21,7 +21,6 @@ import type {
   InvestigationStatus,
 } from '../types/api'
 
-type ListMode = 'incidents' | 'cables'
 type DropdownKey = 'region' | 'actorTier' | 'investigationStatus' | 'suspectedCountry' | 'cableType'
 type DateSort = 'none' | 'newest' | 'oldest'
 
@@ -241,7 +240,9 @@ export function IncidentRail() {
 
   const [meta, setMeta] = useState<FilterMeta | null>(null)
   const [searchDraft, setSearchDraft] = useState(query.q)
-  const [listMode, setListMode] = useState<ListMode>('incidents')
+  const listMode = useUiStore((state) => state.listMode)
+  const setListMode = useUiStore((state) => state.setListMode)
+  const setCableResultCount = useUiStore((state) => state.setCableResultCount)
   const [openDropdown, setOpenDropdown] = useState<DropdownKey | null>(null)
   const [allCables, setAllCables] = useState<CableSummary[]>([])
   const [cablesLoading, setCablesLoading] = useState(false)
@@ -250,9 +251,13 @@ export function IncidentRail() {
   const [cableScores, setCableScores] = useState<Map<string, number> | null>(null)
   const [cableSemanticUnavailable, setCableSemanticUnavailable] = useState(false)
   const [searchedCableNames, setSearchedCableNames] = useState<string[] | null>(null)
+  const [cableSearchLoading, setCableSearchLoading] = useState(false)
   const [dateSort, setDateSort] = useState<DateSort>('none')
   const [aggregate, setAggregate] = useState<AggregateResult | null>(null)
   const [visibleCount, setVisibleCount] = useState(SEMANTIC_PAGE_SIZE)
+  const [queryError, setQueryError] = useState(false)
+  const [pendingSelection, setPendingSelection] = useState<string | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
 
   // Facet counts are dynamic: they reflect the currently active search/filters (each
   // facet computed with every OTHER filter applied but its own selection excluded), so
@@ -290,6 +295,7 @@ export function IncidentRail() {
   useEffect(() => {
     let cancelled = false
     setQueryLoading(true)
+    setQueryError(false)
     void runIncidentQuery(effectiveIncidentQuery(query, listMode))
       .then(({ incidents, markers, scores, semanticUnavailable: unavailable, aggregate: newAggregate }) => {
         if (cancelled) {
@@ -303,7 +309,11 @@ export function IncidentRail() {
       .catch((error) => {
         console.error(error)
         if (!cancelled) {
-          setQueryLoading(false)
+          setQueryError(true)
+          setSemanticScores(null)
+          setSemanticUnavailable(false)
+          setAggregate(null)
+          setFilteredResults([], [])
         }
       })
     return () => {
@@ -321,8 +331,16 @@ export function IncidentRail() {
       setSearchedCableNames(null)
       setCableScores(null)
       setCableSemanticUnavailable(false)
+      setCableSearchLoading(false)
       return
     }
+
+    // Clear the previous search's matches immediately so a fresh keystroke never
+    // shows the prior query's stale results while the new request is in flight.
+    setSearchedCableNames(null)
+    setCableScores(null)
+    setCableSemanticUnavailable(false)
+    setCableSearchLoading(true)
 
     let cancelled = false
     void withTimeout(fetchSemanticSearch(trimmed, 'cables', SEMANTIC_CANDIDATE_LIMIT), SEMANTIC_SEARCH_TIMEOUT_MS)
@@ -343,19 +361,44 @@ export function IncidentRail() {
         setSearchedCableNames(null)
         setCableSemanticUnavailable(true)
       })
+      .finally(() => {
+        if (!cancelled) {
+          setCableSearchLoading(false)
+        }
+      })
     return () => {
       cancelled = true
     }
   }, [query.q, listMode])
 
   const handleSelect = async (incident: IncidentListItem) => {
-    const detail = await fetchIncident(incident.id)
-    selectIncidentFromList(incident, detail)
+    const key = `incident:${incident.id}`
+    setPendingSelection(key)
+    setSelectionError(null)
+    try {
+      const detail = await fetchIncident(incident.id)
+      selectIncidentFromList(incident, detail)
+    } catch (error) {
+      console.error(error)
+      setSelectionError("Couldn't open that incident. Try again.")
+    } finally {
+      setPendingSelection((current) => (current === key ? null : current))
+    }
   }
 
   const handleSelectCable = async (name: string) => {
-    const detail = await fetchCable(name)
-    openCablePanel(name, detail)
+    const key = `cable:${name}`
+    setPendingSelection(key)
+    setSelectionError(null)
+    try {
+      const detail = await fetchCable(name)
+      openCablePanel(name, detail)
+    } catch (error) {
+      console.error(error)
+      setSelectionError("Couldn't open that cable. Try again.")
+    } finally {
+      setPendingSelection((current) => (current === key ? null : current))
+    }
   }
 
   const isCableAggregate = aggregate?.title.toLowerCase().includes('cable') ?? false
@@ -377,6 +420,14 @@ export function IncidentRail() {
     setQuery({ q: '', regions: [], cableTypes: [] })
   }
 
+  // Investigation status, actor tier, and suspected country are incident-only
+  // facets — dropping them when switching to Cables keeps the header's filter
+  // summary and stored query from referencing filters that don't apply here.
+  const switchToCables = () => {
+    setListMode('cables')
+    setQuery({ actorTiers: [], investigationStatuses: [], suspectedCountries: [] })
+  }
+
   const isSearching = Boolean(searchDraft.trim())
 
   const hasActiveIncidentFilters =
@@ -392,9 +443,9 @@ export function IncidentRail() {
   const matchingCableNames = hasActiveCableFacets
     ? new Set(filteredIncidents.map((incident) => incident.canonical_cable_name))
     : null
-  const facetFilteredCables = matchingCableNames
-    ? allCables.filter((cable) => matchingCableNames.has(cable.name))
-    : allCables
+  const facetFilteredCables = (
+    matchingCableNames ? allCables.filter((cable) => matchingCableNames.has(cable.name)) : allCables
+  ).filter((cable) => !hideQuietCables || cable.incident_count > 0)
 
   const isCableSemanticActive = Boolean(isSearching && searchedCableNames)
 
@@ -420,18 +471,25 @@ export function IncidentRail() {
   const displayedCables = isCableSemanticActive ? matchedCables.slice(0, visibleCount) : matchedCables
   const hasMoreCables = isCableSemanticActive && matchedCables.length > visibleCount
 
+  useEffect(() => {
+    setCableResultCount(matchedCables.length)
+  }, [matchedCables.length, setCableResultCount])
+
   const openDropdownHandler = (key: DropdownKey) => (open: boolean) =>
     setOpenDropdown(open ? key : null)
 
   const isIncidentSemanticActive = semanticScores !== null
-  // Only cap the semantically-ranked results — filteredIncidents (already
-  // relevance-ordered by the backend) is sliced before date-sorting so "top N
-  // most relevant" stays meaningful even if the user re-sorts by date.
+  // Sort the full result set by date first, then cap the semantically-ranked
+  // results — otherwise "Newest/Oldest first" would only reorder whatever
+  // page happened to already be visible instead of the entire match set.
+  // When no date sort is active, sortIncidentsByDate is a no-op, so relevance
+  // order (from the backend) is preserved before slicing.
+  const dateSortedIncidents = sortIncidentsByDate(filteredIncidents, dateSort)
   const cappedIncidents = isIncidentSemanticActive
-    ? filteredIncidents.slice(0, visibleCount)
-    : filteredIncidents
+    ? dateSortedIncidents.slice(0, visibleCount)
+    : dateSortedIncidents
   const hasMoreIncidents = isIncidentSemanticActive && filteredIncidents.length > visibleCount
-  const sortedIncidents = sortIncidentsByDate(cappedIncidents, dateSort)
+  const sortedIncidents = cappedIncidents
 
   return (
     <aside className="pointer-events-auto absolute bottom-0 left-0 top-0 z-20 flex w-[340px] flex-col border-r border-[var(--border)] bg-[var(--surface)]">
@@ -464,7 +522,7 @@ export function IncidentRail() {
           </button>
           <button
             type="button"
-            onClick={() => setListMode('cables')}
+            onClick={switchToCables}
             className={`flex-1 px-2 py-1.5 font-medium ${
               listMode === 'cables'
                 ? 'bg-[var(--accent)] text-[var(--on-accent)]'
@@ -624,10 +682,24 @@ export function IncidentRail() {
         </div>
       </div>
 
+      {selectionError && (
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-xs text-[var(--text)]">
+          <span>{selectionError}</span>
+          <button
+            type="button"
+            onClick={() => setSelectionError(null)}
+            className="shrink-0 text-[var(--muted)] hover:text-[var(--text)]"
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-xs font-medium text-[var(--muted)]">
         <span>
           {listMode === 'cables'
-            ? cablesLoading
+            ? cablesLoading || cableSearchLoading
               ? 'Loading…'
               : `${matchedCables.length} cable${matchedCables.length === 1 ? '' : 's'} found`
             : queryLoading
@@ -663,24 +735,30 @@ export function IncidentRail() {
       </div>
 
       {listMode === 'cables' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto transition-opacity ${
+            cableSearchLoading ? 'pointer-events-none opacity-50' : ''
+          }`}
+        >
           {displayedCables.length === 0 && !cablesLoading ? (
             <p className="px-4 py-8 text-sm text-[var(--muted)]">No cables match these filters.</p>
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {displayedCables.map((cable) => {
                 const score = cableScores?.get(cable.name)
+                const isPending = pendingSelection === `cable:${cable.name}`
                 return (
                   <li key={cable.name}>
                     <button
                       type="button"
                       onClick={() => void handleSelectCable(cable.name)}
-                      className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--bg)]"
+                      disabled={isPending}
+                      className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--bg)] disabled:cursor-wait disabled:opacity-60"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-sm font-medium leading-snug">{cable.name}</p>
                         <span className="shrink-0 text-xs text-[var(--muted)]">
-                          {cable.incident_count} incident{cable.incident_count === 1 ? '' : 's'}
+                          {isPending ? 'Opening…' : `${cable.incident_count} incident${cable.incident_count === 1 ? '' : 's'}`}
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-[var(--muted)]">
@@ -718,7 +796,11 @@ export function IncidentRail() {
           )}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto transition-opacity ${
+            queryLoading ? 'pointer-events-none opacity-50' : ''
+          }`}
+        >
           {aggregate && aggregate.items.length > 0 && (
             <div>
               <p className="px-4 pt-3 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]">
@@ -757,7 +839,11 @@ export function IncidentRail() {
             </div>
           )}
 
-          {sortedIncidents.length === 0 && !queryLoading && !aggregate ? (
+          {queryError ? (
+            <p className="px-4 py-8 text-sm text-[var(--muted)]">
+              Couldn't load incidents. Check your connection and try again.
+            </p>
+          ) : sortedIncidents.length === 0 && !queryLoading && !aggregate ? (
             <p className="px-4 py-8 text-sm text-[var(--muted)]">
               No incidents match these filters.
             </p>
@@ -766,12 +852,14 @@ export function IncidentRail() {
               {sortedIncidents.map((incident) => {
                 const selected = selectedIncidentId === incident.id
                 const score = semanticScores?.get(incident.id)
+                const isPending = pendingSelection === `incident:${incident.id}`
                 return (
                   <li key={incident.id}>
                     <button
                       type="button"
                       onClick={() => void handleSelect(incident)}
-                      className={`w-full px-4 py-3 text-left transition-colors ${
+                      disabled={isPending}
+                      className={`w-full px-4 py-3 text-left transition-colors disabled:cursor-wait disabled:opacity-60 ${
                         selected ? 'bg-[var(--bg)]' : 'hover:bg-[var(--bg)]'
                       }`}
                     >
@@ -779,7 +867,11 @@ export function IncidentRail() {
                         <p className="text-sm font-medium leading-snug">
                           {incident.original_cable_name}
                         </p>
-                        <ActorChip tier={incident.actor_tier} />
+                        {isPending ? (
+                          <span className="shrink-0 text-[10px] text-[var(--muted)]">Opening…</span>
+                        ) : (
+                          <ActorChip tier={incident.actor_tier} />
+                        )}
                       </div>
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         {incident.date}
@@ -792,9 +884,9 @@ export function IncidentRail() {
                           </>
                         )}
                       </p>
-                      {incident.nation_state_suspected && (
+                      {incident.cause && (
                         <p className="mt-1 line-clamp-1 text-xs text-[var(--muted)]">
-                          {incident.nation_state_suspected}
+                          {incident.cause}
                         </p>
                       )}
                     </button>
