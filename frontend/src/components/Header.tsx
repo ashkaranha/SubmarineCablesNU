@@ -4,19 +4,24 @@ export function Header() {
   const toggleTheme = useUiStore((state) => state.toggleTheme)
   const theme = useUiStore((state) => state.theme)
   const resultCount = useUiStore((state) => state.resultCount)
+  const cableResultCount = useUiStore((state) => state.cableResultCount)
+  const listMode = useUiStore((state) => state.listMode)
   const query = useUiStore((state) => state.query)
+  const isCables = listMode === 'cables'
+  const shownCount = isCables ? cableResultCount : resultCount
+  const shownLabel = isCables ? 'cable' : 'shown'
 
   const filterBits: string[] = []
   if (query.regions.length) {
     filterBits.push(`${query.regions.length} region${query.regions.length === 1 ? '' : 's'}`)
   }
-  if (query.actorTiers.length) {
+  if (!isCables && query.actorTiers.length) {
     filterBits.push(query.actorTiers.join('/'))
   }
-  if (query.investigationStatuses.length) {
+  if (!isCables && query.investigationStatuses.length) {
     filterBits.push(query.investigationStatuses.join('/'))
   }
-  if (query.q.trim()) {
+  if (!isCables && query.q.trim()) {
     filterBits.push(`“${query.q.trim()}”`)
   }
 
@@ -25,7 +30,7 @@ export function Header() {
       <div className="pointer-events-auto">
         <h1 className="text-sm font-semibold tracking-wide text-[var(--accent)]">CableIncidentsDB</h1>
         <p className="mt-0.5 text-xs text-[var(--muted)]">
-          {resultCount} shown
+          {shownCount} {isCables ? `${shownLabel}${shownCount === 1 ? '' : 's'} shown` : shownLabel}
           {filterBits.length > 0 ? ` · ${filterBits.join(' · ')}` : ''}
         </p>
       </div>

@@ -17,6 +17,7 @@ interface FlyTarget {
 }
 
 export type PanelTextSize = 'sm' | 'md' | 'lg'
+export type ListMode = 'incidents' | 'cables'
 
 interface UiState {
   theme: 'light' | 'dark'
@@ -38,6 +39,10 @@ interface UiState {
   filteredMarkers: IncidentMarker[]
   resultCount: number
   queryLoading: boolean
+  listMode: ListMode
+  cableResultCount: number
+  setListMode: (mode: ListMode) => void
+  setCableResultCount: (count: number) => void
   setTheme: (theme: 'light' | 'dark') => void
   toggleTheme: () => void
   setPanelTextSize: (size: PanelTextSize) => void
@@ -123,6 +128,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   filteredMarkers: [],
   resultCount: 0,
   queryLoading: false,
+  listMode: 'incidents',
+  cableResultCount: 0,
+  setListMode: (mode) => set({ listMode: mode }),
+  setCableResultCount: (count) => set({ cableResultCount: count }),
   setTheme: (theme) => {
     localStorage.setItem(THEME_KEY, theme)
     document.documentElement.classList.toggle('dark', theme === 'dark')

@@ -9,7 +9,7 @@ import {
 } from '../api/client'
 import { resolveIncidentIdFromFeature } from '../api/markerNormalization'
 import { useUiStore } from '../store/uiStore'
-import type { IncidentListItem, IncidentMarker } from '../types/api'
+import type { IncidentListItem, IncidentMarker, MarkerFill } from '../types/api'
 import { MapLegend } from './MapLegend'
 import {
   MARKER_FILL_COLORS,
@@ -330,6 +330,22 @@ function groupMarkersByLocation(markers: IncidentMarker[]): Map<string, Incident
   return groups
 }
 
+const MARKER_FILL_SEVERITY: Record<MarkerFill, number> = {
+  slate: 0,
+  amber: 1,
+  red: 2,
+}
+
+function dominantMarkerFill(markers: IncidentMarker[]): MarkerFill {
+  let best: MarkerFill = 'slate'
+  for (const marker of markers) {
+    if (MARKER_FILL_SEVERITY[marker.marker_fill] > MARKER_FILL_SEVERITY[best]) {
+      best = marker.marker_fill
+    }
+  }
+  return best
+}
+
 function markersToGeoJson(
   markers: IncidentMarker[],
   selectedIncidentId: string | null,
@@ -349,6 +365,10 @@ function markersToGeoJson(
     const isSelected =
       (selectedIncidentId != null && ids.includes(selectedIncidentId)) ||
       (selectedGroupIncidentIds.length > 0 && ids.some((id) => selectedGroupIncidentIds.includes(id)))
+    // Multiple incidents at the same spot still need a color: show the most
+    // severe tier in the group (confirmed > suspected > none) rather than
+    // hiding it behind a flat grey dot.
+    const groupFill = count === 1 ? representative.marker_fill : dominantMarkerFill(group)
 
     features.push({
       type: 'Feature',
@@ -360,7 +380,8 @@ function markersToGeoJson(
         location_key: key,
         count,
         id: count === 1 ? representative.id : null,
-        marker_fill: count === 1 ? representative.marker_fill : null,
+        marker_fill: groupFill,
+        severity: MARKER_FILL_SEVERITY[groupFill],
         status_stroke: count === 1 ? representative.status_stroke : null,
         true_lat: representative.latitude,
         true_lng: representative.longitude,
@@ -483,6 +504,7 @@ function addMapLayers(
     clusterRadius: 45,
     clusterProperties: {
       incident_count: ['+', ['get', 'count']],
+      severity: ['max', ['get', 'severity']],
     },
   })
   map.addLayer({
@@ -491,7 +513,18 @@ function addMapLayers(
     source: 'incidents',
     filter: ['has', 'point_count'],
     paint: {
-      'circle-color': '#374151',
+      // Color clusters by the most severe incident they contain, same as
+      // individual points, so a cluster of suspected/confirmed incidents
+      // doesn't get flattened to a neutral grey.
+      'circle-color': [
+        'step',
+        ['coalesce', ['get', 'severity'], 0],
+        MARKER_FILL_COLORS.slate,
+        1,
+        MARKER_FILL_COLORS.amber,
+        2,
+        MARKER_FILL_COLORS.red,
+      ],
       'circle-radius': ['step', ['coalesce', ['get', 'incident_count'], ['get', 'point_count']], 16, 8, 20, 20, 24],
       'circle-stroke-width': 2,
       'circle-stroke-color': '#ffffff',
@@ -518,18 +551,13 @@ function addMapLayers(
     filter: ['!', ['has', 'point_count']],
     paint: {
       'circle-color': [
-        'case',
-        ['>', ['get', 'count'], 1],
-        '#374151',
-        [
-          'match',
-          ['get', 'marker_fill'],
-          'red',
-          MARKER_FILL_COLORS.red,
-          'amber',
-          MARKER_FILL_COLORS.amber,
-          MARKER_FILL_COLORS.slate,
-        ],
+        'match',
+        ['get', 'marker_fill'],
+        'red',
+        MARKER_FILL_COLORS.red,
+        'amber',
+        MARKER_FILL_COLORS.amber,
+        MARKER_FILL_COLORS.slate,
       ],
       'circle-radius': [
         'case',

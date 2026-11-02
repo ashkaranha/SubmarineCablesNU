@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchCable, fetchIncidentSources } from '../api/client'
 import { useUiStore } from '../store/uiStore'
 import type { CableDetail, IncidentSummary, LLMSource } from '../types/api'
@@ -28,6 +28,7 @@ export function IncidentView({ incident }: IncidentViewProps) {
   const [relatedCable, setRelatedCable] = useState<CableDetail | null>(null)
   const [sourceSearchStatus, setSourceSearchStatus] = useState<SourceSearchStatus>('idle')
   const [llmSources, setLlmSources] = useState<LLMSource[]>([])
+  const sourcesIncidentIdRef = useRef(incident.id)
 
   useEffect(() => {
     let cancelled = false
@@ -48,18 +49,26 @@ export function IncidentView({ incident }: IncidentViewProps) {
   }, [incident.canonical_cable_name])
 
   useEffect(() => {
+    sourcesIncidentIdRef.current = incident.id
     setSourceSearchStatus('idle')
     setLlmSources([])
   }, [incident.id])
 
   function findMoreSources() {
+    const requestedIncidentId = incident.id
     setSourceSearchStatus('loading')
-    fetchIncidentSources(incident.id)
+    fetchIncidentSources(requestedIncidentId)
       .then((result) => {
+        if (sourcesIncidentIdRef.current !== requestedIncidentId) {
+          return
+        }
         setLlmSources(result.llm_sources)
         setSourceSearchStatus('done')
       })
       .catch(() => {
+        if (sourcesIncidentIdRef.current !== requestedIncidentId) {
+          return
+        }
         setSourceSearchStatus('error')
       })
   }

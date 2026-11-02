@@ -51,6 +51,8 @@ export function FilterDropdown({
       <button
         type="button"
         onClick={() => onOpenChange(!isOpen)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
         className={`flex items-center gap-1.5 border px-2.5 py-1.5 text-xs ${
           activeCount > 0
             ? 'border-[var(--text)] bg-[var(--text)] text-[var(--surface)]'
