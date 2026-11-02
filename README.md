@@ -361,9 +361,9 @@ To make a change, branch off `development`, open a merge/pull request into `deve
 
 <!-- TODO: fill in names and roles -->
 
-- Principal investigator: TODO
-- Original development team: TODO
-- Research lab: TODO
+- Principal investigator: V.S. Subrahmanian
+- Original development team: Abem Girmai, Ash Aranha
+- Research lab: Northwestern Security & AI Lab (NSAIL)
 
 Cable route data comes from [TeleGeography's Submarine Cable Map](https://www.submarinecablemap.com).
 
