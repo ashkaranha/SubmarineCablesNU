@@ -47,7 +47,7 @@ The original student team is handing this project off to the research lab. This 
 |-------------|--------|-----------------|
 | Local machine | Working | `docker compose up --build`, then open http://localhost:5174 |
 | NUIT VM (`evsubcables.ads.northwestern.edu`) | Running, but private | Northwestern VPN plus an SSH tunnel. Only people with an account on the VM can reach it. See [NUIT_VM_DEPLOY.md](NUIT_VM_DEPLOY.md). |
-| Render / Vercel / Cloud Run | TODO: confirm whether these are still live | See [DEPLOYMENT.md](DEPLOYMENT.md) and [CLOUD_RUN_DEPLOY.md](CLOUD_RUN_DEPLOY.md) |
+| Render / Vercel / Cloud Run | Working | See [DEPLOYMENT.md](DEPLOYMENT.md) and [CLOUD_RUN_DEPLOY.md](CLOUD_RUN_DEPLOY.md) |
 
 ### Access to transfer
 
@@ -56,7 +56,7 @@ None of these credentials are stored in the repo. Each one needs to be handed ov
 - [ ] **Code repositories.** The primary repo is on a personal GitHub account (`github.com/ashkaranha/SubmarineCablesNU`). A GitHub Action mirrors the `development` branch to the group repo at `gitlab.com/nusubmarinecables-group/SubmarineCablesNU`, using a `GITLAB_MIRROR_TOKEN` secret. The lab should pick one repo as the canonical home. The GitLab group is probably the right choice. Then add lab members as maintainers.
 - [ ] **NUIT VM accounts.** The VM is currently set up under one student's NetID. That includes the systemd service user and the `/home/<netid>/SubmarineCablesNU` checkout. Lab members need their own accounts on `evsubcables` from NUIT, and the service should be moved to a lab-owned account. See [NUIT_VM_DEPLOY.md](NUIT_VM_DEPLOY.md#handing-off-the-vm).
 - [ ] **Google Gemini API key** (`GOOGLE_API_KEY`). This key is tied to someone's Google account. The lab should create its own key in [Google AI Studio](https://aistudio.google.com/apikey).
-- [ ] **Hosting accounts** (Render, Vercel/Netlify, Google Cloud), if any of them are still in use.
+- [ ] **Hosting accounts** Vercel, Supabase, and Google Cloud need to be transferred over. Google Cloud billing account is currently on Abem's personal card, needs to be transferred to lab.
 
 ### Open items
 
@@ -78,10 +78,9 @@ None of these credentials are stored in the repo. Each one needs to be handed ov
 
 | Role | Name | Contact |
 |------|------|---------|
-| Principal investigator | TODO | TODO |
-| Original student team | TODO | TODO |
-| Lab maintainer going forward | TODO | TODO |
-| NUIT contact for the VM | TODO | TODO |
+| Principal investigator | V.S. Subrahmanian | vss@northwestern.edu |
+| Original student team | Abem Girmai, Ash Aranha | abemgirmai2028@u.northwestern.edu, asharanha2027@u.northwestern.edu |
+| Lab maintainer going forward | NSAIL  | vss@northwestern.edu |
 
 ## Tech stack
 
