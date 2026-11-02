@@ -2,8 +2,9 @@
 
 An interactive map and searchable database of submarine cable incidents (cuts, damage, sabotage, and suspected state activity) shown on top of the global undersea cable network. Each incident is plotted on the map and color-coded by how strongly a nation state is suspected and whether the incident has been resolved. You can filter by region, actor, status, and cable type, search in plain English, and open any cable to see its full incident history. It was built for the Northwestern submarine cables research project.
 
-![Screenshot of CableIncidentsDB](<img width="2880" height="1580" alt="screenshot" src="https://github.com/user-attachments/assets/92a7d00a-b46b-4a5d-8a91-77bc8779ad60" />)
+View of CableIncidentsDB
 
+<img width="2880" height="1580" alt="screenshot" src="https://github.com/user-attachments/assets/cd66e733-d49a-4c5d-8cbf-566a46b6758f" />
 
 ## Contents
 
